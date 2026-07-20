@@ -222,6 +222,72 @@ function ClientView({ missions, onSend }) {
 }
 
 /* ================================================================== */
+/*  ALARME PLEIN ÉCRAN (app ouverte)                                  */
+/* ================================================================== */
+function AlarmOverlay({ mission, onAccept }) {
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let stopped = false;
+    let ctx;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+    } catch (_) {}
+
+    const tone = () => {
+      if (!ctx || stopped) return;
+      try {
+        const now = ctx.currentTime;
+        [[880, 0, 0.2], [1245, 0.25, 0.25]].forEach(([f, s, d]) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'square';
+          o.frequency.value = f;
+          o.connect(g); g.connect(ctx.destination);
+          g.gain.setValueAtTime(0.0001, now + s);
+          g.gain.exponentialRampToValueAtTime(0.5, now + s + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + s + d);
+          o.start(now + s); o.stop(now + s + d);
+        });
+      } catch (_) {}
+    };
+    const vibrate = () => { try { navigator.vibrate && navigator.vibrate([500, 250, 500]); } catch (_) {} };
+
+    tone(); vibrate();
+    const a = setInterval(tone, 900);
+    const v = setInterval(vibrate, 1000);
+    return () => {
+      stopped = true;
+      clearInterval(a); clearInterval(v);
+      try { navigator.vibrate && navigator.vibrate(0); } catch (_) {}
+      try { ctx && ctx.close(); } catch (_) {}
+    };
+  }, []);
+
+  const accept = async () => { setBusy(true); try { await onAccept(); } finally { /* overlay se ferme via le parent */ } };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: c.red, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center', animation: 'guidoAlarm 1s ease-in-out infinite' }}>
+      <style>{`@keyframes guidoAlarm{0%,100%{filter:brightness(1)}50%{filter:brightness(1.3)}}`}</style>
+      <Bell size={64} color="#fff" />
+      <div style={{ marginTop: 14, fontSize: 12, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(255,255,255,0.8)' }}>GUIDO</div>
+      <h1 style={{ margin: '6px 0 0', fontSize: 32, fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>NOUVELLE MISSION</h1>
+      <div style={{ marginTop: 20, background: 'rgba(255,255,255,0.14)', borderRadius: 16, padding: '16px 20px', maxWidth: 360, width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><Plate value={mission.immat} /></div>
+        <div style={{ color: '#fff', fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><MapPin size={18} /> {mission.lieu}</div>
+        {mission.pos && <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 6 }}>{mission.type} · {mission.pos}</div>}
+        {mission.message && <div style={{ color: '#fff', fontSize: 13, marginTop: 10, fontStyle: 'italic' }}>“{mission.message}”</div>}
+      </div>
+      <button onClick={accept} disabled={busy} style={{ marginTop: 28, width: '100%', maxWidth: 360, padding: '18px', borderRadius: 16, border: 'none', background: '#fff', color: c.red, fontSize: 18, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+        <CheckCircle2 size={22} /> {busy ? 'Acceptation…' : 'Accepter la mission'}
+      </button>
+      <div style={{ marginTop: 14, color: 'rgba(255,255,255,0.75)', fontSize: 12.5 }}>L'alarme s'arrête à l'acceptation</div>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  PRESTATAIRE                                                       */
 /* ================================================================== */
 function PrestataireView({ missions, onAdvance, alertMission, onDismissAlert, onEnableAlerts, alertsState }) {
@@ -231,10 +297,10 @@ function PrestataireView({ missions, onAdvance, alertMission, onDismissAlert, on
   return (
     <div>
       {alertMission && (
-        <div className="flash" onClick={onDismissAlert} style={{ marginBottom: 16, background: c.red, color: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 11 }}>
-          <Bell size={22} />
-          <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 15 }}>Nouvelle mission assignée !</div><div style={{ fontSize: 13, opacity: 0.9 }}>{alertMission.lieu}</div></div>
-        </div>
+        <AlarmOverlay
+          mission={alertMission}
+          onAccept={async () => { await onAdvance(alertMission.id, alertMission.status); onDismissAlert(); }}
+        />
       )}
 
       {alertsState !== 'on' && (
