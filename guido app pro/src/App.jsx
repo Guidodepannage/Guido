@@ -26,6 +26,25 @@ const mapAccount = (p) => ({
   createdAt: new Date(p.created_at).getTime(),
 });
 
+/* Audio partagé — débloqué par un geste utilisateur (contrainte iOS) */
+let guidoAudioCtx = null;
+function getGuidoAudio() {
+  try {
+    if (!guidoAudioCtx) guidoAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (guidoAudioCtx.state === 'suspended') guidoAudioCtx.resume();
+  } catch (_) {}
+  return guidoAudioCtx;
+}
+function unlockAudio() {
+  const ctx = getGuidoAudio();
+  if (!ctx) return;
+  try {
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+  } catch (_) {}
+}
+
 /* ================================================================== */
 /*  LOGIN (e-mail + mot de passe, pour tous les rôles)                */
 /* ================================================================== */
@@ -229,11 +248,7 @@ function AlarmOverlay({ mission, onAccept, title = 'NOUVELLE MISSION', actionLab
 
   useEffect(() => {
     let stopped = false;
-    let ctx;
-    try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
-    } catch (_) {}
+    const ctx = getGuidoAudio();
 
     const tone = () => {
       if (!ctx || stopped) return;
@@ -261,7 +276,6 @@ function AlarmOverlay({ mission, onAccept, title = 'NOUVELLE MISSION', actionLab
       stopped = true;
       clearInterval(a); clearInterval(v);
       try { navigator.vibrate && navigator.vibrate(0); } catch (_) {}
-      try { ctx && ctx.close(); } catch (_) {}
     };
   }, []);
 
@@ -714,6 +728,7 @@ export default function App() {
   const removeAccount = async (id) => { await supabase.from('profiles').delete().eq('id', id); };
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); flash('Lien copié'); } catch (_) { flash('Sélectionnez le lien pour le copier'); } };
   const enableAlerts = async () => {
+    unlockAudio();
     const r = await activerNotifications(profile.id);
     if (r.ok) { setAlertsState('on'); flash('Alertes activées'); } else flash(r.msg);
   };
