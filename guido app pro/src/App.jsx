@@ -224,7 +224,7 @@ function ClientView({ missions, onSend }) {
 /* ================================================================== */
 /*  ALARME PLEIN ÉCRAN (app ouverte)                                  */
 /* ================================================================== */
-function AlarmOverlay({ mission, onAccept }) {
+function AlarmOverlay({ mission, onAccept, title = 'NOUVELLE MISSION', actionLabel = 'Accepter la mission' }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -252,11 +252,11 @@ function AlarmOverlay({ mission, onAccept }) {
         });
       } catch (_) {}
     };
-    const vibrate = () => { try { navigator.vibrate && navigator.vibrate([500, 250, 500]); } catch (_) {} };
+    const vibrate = () => { try { navigator.vibrate && navigator.vibrate([900, 300, 900, 300, 900]); } catch (_) {} };
 
     tone(); vibrate();
     const a = setInterval(tone, 900);
-    const v = setInterval(vibrate, 1000);
+    const v = setInterval(vibrate, 3200);
     return () => {
       stopped = true;
       clearInterval(a); clearInterval(v);
@@ -272,7 +272,7 @@ function AlarmOverlay({ mission, onAccept }) {
       <style>{`@keyframes guidoAlarm{0%,100%{filter:brightness(1)}50%{filter:brightness(1.3)}}`}</style>
       <Bell size={64} color="#fff" />
       <div style={{ marginTop: 14, fontSize: 12, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(255,255,255,0.8)' }}>GUIDO</div>
-      <h1 style={{ margin: '6px 0 0', fontSize: 32, fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>NOUVELLE MISSION</h1>
+      <h1 style={{ margin: '6px 0 0', fontSize: 32, fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>{title}</h1>
       <div style={{ marginTop: 20, background: 'rgba(255,255,255,0.14)', borderRadius: 16, padding: '16px 20px', maxWidth: 360, width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><Plate value={mission.immat} /></div>
         <div style={{ color: '#fff', fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><MapPin size={18} /> {mission.lieu}</div>
@@ -280,7 +280,7 @@ function AlarmOverlay({ mission, onAccept }) {
         {mission.message && <div style={{ color: '#fff', fontSize: 13, marginTop: 10, fontStyle: 'italic' }}>“{mission.message}”</div>}
       </div>
       <button onClick={accept} disabled={busy} style={{ marginTop: 28, width: '100%', maxWidth: 360, padding: '18px', borderRadius: 16, border: 'none', background: '#fff', color: c.red, fontSize: 18, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-        <CheckCircle2 size={22} /> {busy ? 'Acceptation…' : 'Accepter la mission'}
+        <CheckCircle2 size={22} /> {busy ? 'Un instant…' : actionLabel}
       </button>
       <div style={{ marginTop: 14, color: 'rgba(255,255,255,0.75)', fontSize: 12.5 }}>L'alarme s'arrête à l'acceptation</div>
     </div>
@@ -558,7 +558,7 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete })
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const aAssigner = missions.filter((m) => m.status === 'envoyee').length;
@@ -575,7 +575,12 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
             <div style={{ width: 30, height: 30, borderRadius: 9, background: c.amber, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Truck size={18} color="#fff" strokeWidth={2.2} /></div>
             <div><div style={{ fontSize: 15.5, fontWeight: 800, lineHeight: 1 }}>Guido</div><div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 2 }}>Console admin</div></div>
           </div>
-          <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 13px', fontSize: 13, fontWeight: 600 }}><LogOut size={15} /> Déconnexion</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {alertsState !== 'on' && (
+              <button onClick={onEnableAlerts} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.amber, color: '#fff', border: 'none', borderRadius: 10, padding: '8px 12px', fontSize: 13, fontWeight: 700 }}><BellRing size={15} /> Activer les alertes</button>
+            )}
+            <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 13px', fontSize: 13, fontWeight: 600 }}><LogOut size={15} /> Déconnexion</button>
+          </div>
         </div>
         <div style={{ height: 5, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
       </header>
@@ -646,6 +651,12 @@ export default function App() {
         const fresh = mine.filter((m) => !seen.current.has(m.id));
         if (!firstMissions.current && fresh.length) { setAlertMission(fresh[0]); beep(); }
         mine.forEach((m) => seen.current.add(m.id));
+      }
+      if (profile.type === 'admin') {
+        const pending = list.filter((m) => m.status === 'envoyee');
+        const fresh = pending.filter((m) => !seen.current.has('adm:' + m.id));
+        if (!firstMissions.current && fresh.length) { setAlertMission(fresh[0]); beep(); }
+        pending.forEach((m) => seen.current.add('adm:' + m.id));
       }
       firstMissions.current = false;
     };
@@ -726,7 +737,17 @@ export default function App() {
 
   if (profile.type === 'admin') {
     return <><GlobalStyle /><AdminShell profile={profile} accounts={accounts} missions={missions} invites={invites}
-      onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast} /></>;
+      onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
+      onEnableAlerts={enableAlerts} alertsState={alertsState} />
+      {alertMission && (
+        <AlarmOverlay
+          mission={alertMission}
+          title="NOUVELLE DEMANDE"
+          actionLabel="J'ai vu — répartir"
+          onAccept={async () => { setAlertMission(null); }}
+        />
+      )}
+    </>;
   }
 
   return (
