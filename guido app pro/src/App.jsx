@@ -139,6 +139,37 @@ function Bienvenue({ hasSession, onDone }) {
 /* ================================================================== */
 /*  CLIENT                                                            */
 /* ================================================================== */
+function Info({ label, value, mono }) {
+  return (
+    <div style={{ background: c.paper, borderRadius: 9, padding: '8px 10px' }}>
+      <div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>{label}</div>
+      <div className={mono ? 'num' : undefined} style={{ fontSize: 13.5, fontWeight: 700, color: c.ink, wordBreak: 'break-word' }}>{value || '—'}</div>
+    </div>
+  );
+}
+
+/* Carte détaillée d'une mission — affiche toutes les informations saisies */
+function MissionDetail({ m, client }) {
+  const dateStr = new Date(m.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 11 }}>
+        <Plate value={m.immat} /><Pill status={m.status} client={client} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: c.ink, marginBottom: 10 }}><MapPin size={15} color={c.amber} /> {m.lieu}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: m.message ? 10 : 0 }}>
+        <Info label="Type de pneu" value={m.type} mono />
+        <Info label="Position" value={m.pos} />
+        <Info label="Téléphone chauffeur" value={m.tel} mono />
+        <Info label="Date" value={dateStr} />
+        {!client && <Info label="Client" value={m.clientCompany} />}
+        {m.assignedName && <Info label="Prestataire" value={m.assignedName} />}
+      </div>
+      {m.message && <NoteBox text={m.message} />}
+    </div>
+  );
+}
+
 function ClientView({ missions, onSend }) {
   const [lieu, setLieu] = useState('');
   const [immat, setImmat] = useState('');
@@ -151,6 +182,7 @@ function ClientView({ missions, onSend }) {
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState('new');
 
   const needInout = element === 'Tracteur' && (essieu === 2 || essieu === 3);
   const pos = element && cote && essieu ? `${element} ${cote}${essieu}${needInout && inout ? ' ' + inout : ''}` : '';
@@ -172,68 +204,71 @@ function ClientView({ missions, onSend }) {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Nouvelle mission</h1>
-      <p style={{ margin: '0 0 18px', fontSize: 13.5, color: c.muted }}>Votre demande est transmise à Guido pour affectation.</p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16 }}>
-        <div><label style={labelStyle}>Lieu du dépannage</label>
-          <input style={fieldStyle} value={lieu} onChange={(e) => setLieu(e.target.value)} placeholder="Ex. A6 sortie 14, aire de Nemours" /></div>
-        <div><label style={labelStyle}>Immatriculation</label>
-          <input style={{ ...fieldStyle, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'ui-monospace, Menlo, monospace' }} value={immat} onChange={(e) => setImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
-        <div><label style={labelStyle}>Type de pneu</label>
-          <input style={fieldStyle} list="tp" value={type} onChange={(e) => setType(e.target.value)} placeholder="Ex. 315/80 R22.5" />
-          <datalist id="tp">{POS_TYPES.map((t) => <option key={t} value={t} />)}</datalist></div>
-
-        <div>
-          <label style={labelStyle}>Position du pneu</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-            <div><div style={subLabel}>Élément</div><div style={chipRow}>
-              {chip('Tracteur', element === 'Tracteur', () => setElement('Tracteur'))}
-              {chip('Remorque', element === 'Remorque', () => { setElement('Remorque'); setInout(''); })}
-            </div></div>
-            <div><div style={subLabel}>Côté</div><div style={chipRow}>
-              {chip('Gauche', cote === 'G', () => setCote('G'))}
-              {chip('Droite', cote === 'D', () => setCote('D'))}
-            </div></div>
-            <div><div style={subLabel}>N° d'essieu</div><div style={chipRow}>
-              {[1, 2, 3].map((n) => chip(String(n), essieu === n, () => setEssieu(n), n))}
-            </div></div>
-            {needInout && (
-              <div className="pop"><div style={subLabel}>Roue (essieu jumelé)</div><div style={chipRow}>
-                {chip('Intérieur', inout === 'Int', () => setInout('Int'))}
-                {chip('Extérieur', inout === 'Ext', () => setInout('Ext'))}
-              </div></div>
-            )}
-            {pos && <div style={{ fontSize: 13, color: c.muted, background: c.paper, borderRadius: 9, padding: '9px 11px' }}>Position retenue : <b className="num" style={{ color: c.ink }}>{pos}</b></div>}
-          </div>
-        </div>
-
-        <div><label style={labelStyle}>Téléphone du chauffeur</label>
-          <input type="tel" inputMode="tel" style={fieldStyle} value={tel} onChange={(e) => setTel(e.target.value)} placeholder="06 12 34 56 78" /></div>
-
-        <div><label style={labelStyle}>Message / spécificité (optionnel)</label>
-          <textarea rows={3} style={{ ...fieldStyle, resize: 'vertical', minHeight: 74, lineHeight: 1.5 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Ex. Camion en sous-sol, accès poids lourd difficile, pneu déjà démonté…" /></div>
-
-        <button onClick={send} disabled={!valid || busy} style={{ marginTop: 2, width: '100%', padding: '15px', borderRadius: 13, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 16, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
-          <Send size={19} strokeWidth={2.4} /> {busy ? 'Envoi…' : 'Envoyer la demande'}
-        </button>
+      <div style={{ display: 'flex', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: 4, marginBottom: 18 }}>
+        {[{ k: 'new', label: 'Nouvelle mission' }, { k: 'history', label: `Historique${mine.length ? ` (${mine.length})` : ''}` }].map((t) => {
+          const on = tab === t.k;
+          return <button key={t.k} onClick={() => setTab(t.k)} style={{ flex: 1, padding: '10px', borderRadius: 9, border: 'none', fontSize: 14, fontWeight: 700, background: on ? c.ink : 'transparent', color: on ? '#fff' : c.muted }}>{t.label}</button>;
+        })}
       </div>
 
-      {sent && <div className="pop" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 9, background: c.greenSoft, color: c.green, borderRadius: 12, padding: '12px 14px', fontSize: 14, fontWeight: 600 }}><CheckCircle2 size={18} /> Demande envoyée à Guido</div>}
+      {tab === 'new' ? (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16 }}>
+            <div><label style={labelStyle}>Lieu du dépannage</label>
+              <input style={fieldStyle} value={lieu} onChange={(e) => setLieu(e.target.value)} placeholder="Ex. A6 sortie 14, aire de Nemours" /></div>
+            <div><label style={labelStyle}>Immatriculation</label>
+              <input style={{ ...fieldStyle, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'ui-monospace, Menlo, monospace' }} value={immat} onChange={(e) => setImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
+            <div><label style={labelStyle}>Type de pneu</label>
+              <input style={fieldStyle} list="tp" value={type} onChange={(e) => setType(e.target.value)} placeholder="Ex. 315/80 R22.5" />
+              <datalist id="tp">{POS_TYPES.map((t) => <option key={t} value={t} />)}</datalist></div>
 
-      {mine.length > 0 && (
-        <div style={{ marginTop: 26 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Mes missions</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {mine.map((m) => (
-              <div key={m.id} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '13px 14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}><Plate value={m.immat} /><Pill status={m.status} client /></div>
-                <div style={{ marginTop: 9, fontSize: 13.5, color: c.ink, display: 'flex', alignItems: 'center', gap: 6 }}><MapPin size={14} color={c.muted} /> {m.lieu}</div>
-                <div style={{ marginTop: 6, fontSize: 12.5, color: c.muted }}>{m.type} · {m.pos} · <span className="num">{timeAgo(m.createdAt)}</span>{m.assignedName && <> · prestataire <b style={{ color: c.green }}>{m.assignedName}</b></>}</div>
-                {m.message && <div style={{ marginTop: 7, fontSize: 12.5, color: c.ink, fontStyle: 'italic' }}>“{m.message}”</div>}
+            <div>
+              <label style={labelStyle}>Position du pneu</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                <div><div style={subLabel}>Élément</div><div style={chipRow}>
+                  {chip('Tracteur', element === 'Tracteur', () => setElement('Tracteur'))}
+                  {chip('Remorque', element === 'Remorque', () => { setElement('Remorque'); setInout(''); })}
+                </div></div>
+                <div><div style={subLabel}>Côté</div><div style={chipRow}>
+                  {chip('Gauche', cote === 'G', () => setCote('G'))}
+                  {chip('Droite', cote === 'D', () => setCote('D'))}
+                </div></div>
+                <div><div style={subLabel}>N° d'essieu</div><div style={chipRow}>
+                  {[1, 2, 3].map((n) => chip(String(n), essieu === n, () => setEssieu(n), n))}
+                </div></div>
+                {needInout && (
+                  <div className="pop"><div style={subLabel}>Roue (essieu jumelé)</div><div style={chipRow}>
+                    {chip('Intérieur', inout === 'Int', () => setInout('Int'))}
+                    {chip('Extérieur', inout === 'Ext', () => setInout('Ext'))}
+                  </div></div>
+                )}
+                {pos && <div style={{ fontSize: 13, color: c.muted, background: c.paper, borderRadius: 9, padding: '9px 11px' }}>Position retenue : <b className="num" style={{ color: c.ink }}>{pos}</b></div>}
               </div>
-            ))}
+            </div>
+
+            <div><label style={labelStyle}>Téléphone du chauffeur</label>
+              <input type="tel" inputMode="tel" style={fieldStyle} value={tel} onChange={(e) => setTel(e.target.value)} placeholder="06 12 34 56 78" /></div>
+
+            <div><label style={labelStyle}>Message / spécificité (optionnel)</label>
+              <textarea rows={3} style={{ ...fieldStyle, resize: 'vertical', minHeight: 74, lineHeight: 1.5 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Ex. Camion en sous-sol, accès poids lourd difficile, pneu déjà démonté…" /></div>
+
+            <button onClick={send} disabled={!valid || busy} style={{ marginTop: 2, width: '100%', padding: '15px', borderRadius: 13, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 16, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+              <Send size={19} strokeWidth={2.4} /> {busy ? 'Envoi…' : 'Envoyer la demande'}
+            </button>
           </div>
+
+          {sent && <div className="pop" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 9, background: c.greenSoft, color: c.green, borderRadius: 12, padding: '12px 14px', fontSize: 14, fontWeight: 600 }}><CheckCircle2 size={18} /> Demande envoyée à Guido</div>}
+        </>
+      ) : (
+        <div>
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: c.muted }}>Vos demandes des 3 derniers mois.</p>
+          {mine.length === 0 ? (
+            <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune mission pour le moment.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {mine.map((m) => <MissionDetail key={m.id} m={m} client />)}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -307,6 +342,7 @@ function AlarmOverlay({ mission, onAccept, title = 'NOUVELLE MISSION', actionLab
 function PrestataireView({ missions, onAdvance, alertMission, onDismissAlert, onEnableAlerts, alertsState }) {
   const active = missions.filter((m) => m.status !== 'terminee').sort((a, b) => b.createdAt - a.createdAt);
   const done = missions.filter((m) => m.status === 'terminee').sort((a, b) => b.createdAt - a.createdAt);
+  const [tab, setTab] = useState('active');
 
   return (
     <div>
@@ -323,51 +359,54 @@ function PrestataireView({ missions, onAdvance, alertMission, onDismissAlert, on
         </button>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <Radio size={16} color={c.amber} />
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mes missions ({active.length})</span>
-      </div>
-
-      {active.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune mission assignée pour le moment.</div>}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {active.map((m) => {
-          const step = PREST_NEXT[m.status];
-          const isNew = m.status === 'assignee';
-          return (
-            <div key={m.id} style={{ background: c.surface, border: `1px solid ${isNew ? c.amber : c.line}`, borderRadius: 16, padding: 15 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}><Plate value={m.immat} /><Pill status={m.status} /></div>
-              {m.message && <NoteBox text={m.message} />}
-              <a href={`https://maps.google.com/?q=${encodeURIComponent(m.lieu)}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
-                <MapPin size={17} color={c.amber} /><span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{m.lieu}</span><Navigation size={15} color={c.muted} />
-              </a>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <div style={{ flex: 1, background: c.paper, borderRadius: 10, padding: '9px 11px' }}><div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>Type de pneu</div><div className="num" style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{m.type}</div></div>
-                <div style={{ flex: 1, background: c.paper, borderRadius: 10, padding: '9px 11px' }}><div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>Position</div><div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{m.pos}</div></div>
-              </div>
-              <a href={`tel:${(m.tel || '').replace(/\s/g, '')}`} style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px' }}>
-                <Phone size={17} color={c.green} /><span style={{ flex: 1, fontSize: 13, color: c.muted }}>Chauffeur</span><span className="num" style={{ fontSize: 14.5, fontWeight: 700 }}>{m.tel}</span>
-              </a>
-              {step && (
-                <button onClick={() => onAdvance(m.id, m.status)} style={{ marginTop: 12, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: m.status === 'assignee' ? c.amber : c.ink, color: '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  {m.status === 'assignee' ? <Flag size={17} /> : <CheckCircle2 size={17} />}{step.label}
-                </button>
-              )}
-            </div>
-          );
+      <div style={{ display: 'flex', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: 4, marginBottom: 16 }}>
+        {[{ k: 'active', label: `En cours${active.length ? ` (${active.length})` : ''}` }, { k: 'history', label: `Historique${done.length ? ` (${done.length})` : ''}` }].map((t) => {
+          const on = tab === t.k;
+          return <button key={t.k} onClick={() => setTab(t.k)} style={{ flex: 1, padding: '10px', borderRadius: 9, border: 'none', fontSize: 14, fontWeight: 700, background: on ? c.ink : 'transparent', color: on ? '#fff' : c.muted }}>{t.label}</button>;
         })}
       </div>
 
-      {done.length > 0 && (
-        <div style={{ marginTop: 26 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Terminées</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {done.map((m) => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px', opacity: 0.72 }}>
-                <CheckCircle2 size={17} color={c.muted} /><span style={{ flex: 1, fontSize: 13.5, color: c.ink }}>{m.lieu}</span><Plate value={m.immat} />
-              </div>
-            ))}
+      {tab === 'active' ? (
+        <>
+          {active.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune mission en cours.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {active.map((m) => {
+              const step = PREST_NEXT[m.status];
+              const isNew = m.status === 'assignee';
+              return (
+                <div key={m.id} style={{ background: c.surface, border: `1px solid ${isNew ? c.amber : c.line}`, borderRadius: 16, padding: 15 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}><Plate value={m.immat} /><Pill status={m.status} /></div>
+                  {m.message && <NoteBox text={m.message} />}
+                  <a href={`https://maps.google.com/?q=${encodeURIComponent(m.lieu)}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <MapPin size={17} color={c.amber} /><span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{m.lieu}</span><Navigation size={15} color={c.muted} />
+                  </a>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1, background: c.paper, borderRadius: 10, padding: '9px 11px' }}><div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>Type de pneu</div><div className="num" style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{m.type}</div></div>
+                    <div style={{ flex: 1, background: c.paper, borderRadius: 10, padding: '9px 11px' }}><div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>Position</div><div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{m.pos}</div></div>
+                  </div>
+                  <a href={`tel:${(m.tel || '').replace(/\s/g, '')}`} style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px' }}>
+                    <Phone size={17} color={c.green} /><span style={{ flex: 1, fontSize: 13, color: c.muted }}>Chauffeur</span><span className="num" style={{ fontSize: 14.5, fontWeight: 700 }}>{m.tel}</span>
+                  </a>
+                  {step && (
+                    <button onClick={() => onAdvance(m.id, m.status)} style={{ marginTop: 12, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: m.status === 'assignee' ? c.amber : c.ink, color: '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {m.status === 'assignee' ? <Flag size={17} /> : <CheckCircle2 size={17} />}{step.label}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        </>
+      ) : (
+        <div>
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: c.muted }}>Vos missions terminées des 3 derniers mois.</p>
+          {done.length === 0 ? (
+            <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune mission terminée.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {done.map((m) => <MissionDetail key={m.id} m={m} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
