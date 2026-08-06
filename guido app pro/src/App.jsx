@@ -65,7 +65,7 @@ function Login() {
     <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 24, justifyContent: 'center' }}>
-          <div style={{ width: 40, height: 40, borderRadius: 11, background: c.amber, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Truck size={23} color="#fff" strokeWidth={2.2} /></div>
+          <img src="/logo-emblem.png" alt="Guido" style={{ width: 42, height: 42, objectFit: 'contain' }} />
           <div><div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>Guido</div><div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 3 }}>Dépannage poids lourd</div></div>
         </div>
         <div style={{ background: c.surface, borderRadius: 18, padding: 22 }}>
@@ -109,7 +109,7 @@ function Bienvenue({ hasSession, onDone }) {
     <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 24, justifyContent: 'center' }}>
-          <div style={{ width: 40, height: 40, borderRadius: 11, background: c.amber, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Truck size={23} color="#fff" strokeWidth={2.2} /></div>
+          <img src="/logo-emblem.png" alt="Guido" style={{ width: 42, height: 42, objectFit: 'contain' }} />
           <div><div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>Bienvenue</div><div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>Activez votre compte Guido</div></div>
         </div>
         <div style={{ background: c.surface, borderRadius: 18, padding: 22 }}>
@@ -420,7 +420,7 @@ function FieldShell({ user, children, onLogout }) {
         <header style={{ background: c.asphalt, color: '#fff', padding: '14px 18px 0' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, background: c.amber, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Truck size={19} color="#fff" strokeWidth={2.2} /></div>
+              <img src="/logo-emblem.png" alt="Guido" style={{ width: 34, height: 34, objectFit: 'contain' }} />
               <div><div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>Guido</div><div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>{user.company} · <span style={{ textTransform: 'capitalize' }}>{user.type}</span></div></div>
             </div>
             <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 12.5, fontWeight: 600 }}><LogOut size={14} /> Quitter</button>
@@ -625,7 +625,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
       <header style={{ background: c.asphalt, color: '#fff' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '13px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: c.amber, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Truck size={18} color="#fff" strokeWidth={2.2} /></div>
+            <img src="/logo-emblem.png" alt="Guido" style={{ width: 32, height: 32, objectFit: 'contain' }} />
             <div><div style={{ fontSize: 15.5, fontWeight: 800, lineHeight: 1 }}>Guido</div><div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 2 }}>Console admin</div></div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
