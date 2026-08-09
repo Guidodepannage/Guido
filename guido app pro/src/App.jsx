@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Truck, Send, MapPin, Phone, CheckCircle2, Navigation, Flag, Bell, Radio,
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
-  LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing
+  LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
+  Package, Minus, Pencil, AlertTriangle
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -26,6 +27,14 @@ const mapAccount = (p) => ({
   phone: p.phone, email: p.email, zone: p.zone, status: p.status,
   createdAt: new Date(p.created_at).getTime(),
 });
+
+const mapStock = (r) => ({
+  id: r.id, dimension: r.dimension, marque: r.marque, etat: r.etat,
+  quantite: r.quantite ?? 0, prix: r.prix, seuil: r.seuil,
+  rechape: r.rechape, usure: r.usure,
+  createdAt: new Date(r.created_at).getTime(),
+});
+const stockBas = (s) => s.etat === 'neuf' && s.seuil != null && s.quantite <= s.seuil;
 
 /* Audio partagé — débloqué par un geste utilisateur (contrainte iOS) */
 let guidoAudioCtx = null;
@@ -530,12 +539,14 @@ function CreateModal({ onClose, onCreate }) {
   );
 }
 
-function Dashboard({ accounts, missions, goMissions, goAccounts }) {
+function Dashboard({ accounts, missions, stock = [], goMissions, goAccounts, goStock }) {
   const aAssigner = missions.filter((m) => m.status === 'envoyee').length;
   const clients = accounts.filter((a) => a.type === 'client' && a.status === 'actif').length;
   const prests = accounts.filter((a) => a.type === 'prestataire' && a.status === 'actif').length;
+  const aRecommander = stock.filter(stockBas).length;
   const cards = [
     { label: 'Missions à assigner', value: aAssigner, color: aAssigner ? c.red : c.ink, onClick: goMissions },
+    { label: 'Pneus à recommander', value: aRecommander, color: aRecommander ? c.red : c.ink, onClick: goStock },
     { label: 'Clients actifs', value: clients, color: c.blue },
     { label: 'Prestataires actifs', value: prests, color: c.amber },
     { label: 'Comptes au total', value: accounts.length, color: c.ink, onClick: goAccounts },
@@ -636,13 +647,163 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete })
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState }) {
+/* ================================================================== */
+/*  STOCK (admin)                                                     */
+/* ================================================================== */
+function StockModal({ item, onClose, onSubmit }) {
+  const [dimension, setDimension] = useState(item?.dimension || '');
+  const [marque, setMarque] = useState(item?.marque || '');
+  const [etat, setEtat] = useState(item?.etat || 'neuf');
+  const [quantite, setQuantite] = useState(item ? String(item.quantite) : '0');
+  const [prix, setPrix] = useState(item?.prix != null ? String(item.prix) : '');
+  const [seuil, setSeuil] = useState(item?.seuil != null ? String(item.seuil) : '');
+  const [rechape, setRechape] = useState(item?.rechape ?? false);
+  const [usure, setUsure] = useState(item?.usure != null ? item.usure : 0);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const valid = dimension.trim();
+
+  const submit = async () => {
+    setBusy(true); setErr('');
+    const payload = {
+      dimension: dimension.trim(),
+      marque: marque.trim() || null,
+      etat,
+      quantite: parseInt(quantite, 10) || 0,
+      prix: prix.trim() === '' ? null : parseFloat(prix.replace(',', '.')),
+      seuil: etat === 'neuf' && seuil.trim() !== '' ? parseInt(seuil, 10) : null,
+      rechape: etat === 'occasion' ? !!rechape : null,
+      usure: etat === 'occasion' ? Number(usure) : null,
+    };
+    const res = await onSubmit(payload);
+    setBusy(false);
+    if (res?.error) setErr(res.error); else onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 50 }}>
+      <div className="pop" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: c.surface, borderRadius: 18, padding: 22, maxHeight: '90dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Package size={19} color={c.amber} /><h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: c.ink }}>{item ? 'Modifier la référence' : 'Nouvelle référence'}</h2></div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: 'transparent', color: c.muted }}><X size={20} /></button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+          <div><label style={labelStyle}>Dimension</label><input style={fieldStyle} value={dimension} onChange={(e) => setDimension(e.target.value)} placeholder="Ex. 315/80 R22.5" /></div>
+          <div><label style={labelStyle}>Marque</label><input style={fieldStyle} value={marque} onChange={(e) => setMarque(e.target.value)} placeholder="Ex. Michelin" /></div>
+          <div><label style={labelStyle}>État</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{ k: 'neuf', label: 'Neuf' }, { k: 'occasion', label: 'Occasion' }].map((o) => { const on = etat === o.k; return <button key={o.k} onClick={() => setEtat(o.k)} style={{ flex: 1, padding: '11px', borderRadius: 11, fontSize: 14, fontWeight: 700, border: `1.5px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.ink }}>{o.label}</button>; })}
+            </div></div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}><label style={labelStyle}>Quantité</label><input type="number" inputMode="numeric" style={fieldStyle} value={quantite} onChange={(e) => setQuantite(e.target.value)} /></div>
+            <div style={{ flex: 1 }}><label style={labelStyle}>Prix (€)</label><input type="number" inputMode="decimal" style={fieldStyle} value={prix} onChange={(e) => setPrix(e.target.value)} placeholder="Optionnel" /></div>
+          </div>
+          {etat === 'neuf' && (
+            <div><label style={labelStyle}>Seuil d'alerte</label>
+              <input type="number" inputMode="numeric" style={fieldStyle} value={seuil} onChange={(e) => setSeuil(e.target.value)} placeholder="Ex. 2 — alerte quand le stock descend à ce niveau" /></div>
+          )}
+          {etat === 'occasion' && (
+            <>
+              <div><label style={labelStyle}>Réchapé</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[{ v: false, label: 'Non réchapé' }, { v: true, label: 'Réchapé' }].map((o) => { const on = rechape === o.v; return <button key={String(o.v)} onClick={() => setRechape(o.v)} style={{ flex: 1, padding: '11px', borderRadius: 11, fontSize: 14, fontWeight: 700, border: `1.5px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.ink }}>{o.label}</button>; })}
+                </div>
+              </div>
+              <div><label style={labelStyle}>Taux d'usure : <span className="num" style={{ color: c.amberDark }}>{usure}%</span></label>
+                <input type="range" min={0} max={80} step={5} value={usure} onChange={(e) => setUsure(e.target.value)} style={{ width: '100%', accentColor: c.amber }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: c.muted, marginTop: 2 }}><span>0% (neuf)</span><span>80% (usé)</span></div>
+              </div>
+            </>
+          )}
+          {err && <div style={{ color: c.red, fontSize: 13 }}>{err}</div>}
+          <button onClick={submit} disabled={!valid || busy} style={{ marginTop: 4, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 15, fontWeight: 800 }}>{busy ? 'Enregistrement…' : (item ? 'Enregistrer' : 'Ajouter au stock')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StockCard({ s, onEdit, onDelete, onAdjust }) {
+  const bas = stockBas(s);
+  const etatMeta = s.etat === 'neuf' ? { label: 'Neuf', bg: c.greenSoft, fg: c.green } : { label: 'Occasion', bg: c.blueSoft, fg: c.blue };
+  return (
+    <div style={{ background: c.surface, border: `1px solid ${bas ? c.red : c.line}`, borderRadius: 15, padding: '13px 15px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="num" style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>{s.dimension}</div>
+          <div style={{ fontSize: 13, color: c.muted, marginTop: 2 }}>{s.marque || 'Sans marque'}{s.prix != null ? ` · ${s.prix} €` : ''}</div>
+          {s.etat === 'occasion' && (
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 4 }}>{s.rechape ? 'Réchapé' : 'Non réchapé'} · usure <b className="num" style={{ color: c.ink }}>{s.usure ?? 0}%</b></div>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+          <Badge meta={etatMeta} />
+          {bas && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: c.red, fontSize: 11.5, fontWeight: 700 }}><AlertTriangle size={13} /> À recommander</span>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => onAdjust(s.id, -1)} aria-label="Retirer" style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${c.line}`, background: c.surface, color: c.ink, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus size={16} /></button>
+          <span className="num" style={{ minWidth: 42, textAlign: 'center', fontSize: 20, fontWeight: 800, color: bas ? c.red : c.ink }}>{s.quantite}</span>
+          <button onClick={() => onAdjust(s.id, 1)} aria-label="Ajouter" style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: c.amber, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={16} /></button>
+          <span style={{ fontSize: 12, color: c.muted }}>en stock</span>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => onEdit(s)} aria-label="Modifier" style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${c.line}`, background: c.surface, color: c.muted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Pencil size={15} /></button>
+          <button onClick={() => onDelete(s.id)} aria-label="Supprimer" style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${c.line}`, background: c.surface, color: c.red, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={15} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
+  const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const filters = [{ k: 'all', label: 'Toutes' }, { k: 'neuf', label: 'Neuf' }, { k: 'occasion', label: 'Occasion' }, { k: 'bas', label: 'À recommander' }];
+  const shown = stock.filter((s) => {
+    const bf = filter === 'all' ? true : filter === 'bas' ? stockBas(s) : s.etat === filter;
+    const bq = q.trim() === '' ? true : (`${s.dimension} ${s.marque || ''}`).toLowerCase().includes(q.toLowerCase());
+    return bf && bq;
+  }).sort((a, b) => (stockBas(b) - stockBas(a)) || a.dimension.localeCompare(b.dimension));
+
+  const openNew = () => { setEditing(null); setModal(true); };
+  const openEdit = (s) => { setEditing(s); setModal(true); };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 10 }}>
+        <h1 style={{ margin: 0, fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Stock</h1>
+        <button onClick={openNew} style={{ display: 'flex', alignItems: 'center', gap: 7, background: c.amber, color: '#fff', border: 'none', borderRadius: 11, padding: '10px 15px', fontSize: 14, fontWeight: 700, flexShrink: 0 }}><Plus size={17} strokeWidth={2.4} /> Ajouter</button>
+      </div>
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <Search size={16} color={c.muted} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)' }} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une dimension, une marque…" style={{ ...fieldStyle, paddingLeft: 38 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 2 }}>
+        {filters.map((f) => { const on = filter === f.k; return <button key={f.k} onClick={() => setFilter(f.k)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: `1px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.muted }}>{f.label}</button>; })}
+      </div>
+      {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0' }}>Aucune référence. Cliquez sur « Ajouter » pour créer votre stock.</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 11 }}>
+        {shown.map((s) => <StockCard key={s.id} s={s} onEdit={openEdit} onDelete={onDelete} onAdjust={onAdjust} />)}
+      </div>
+      {modal && <StockModal item={editing} onClose={() => setModal(false)} onSubmit={editing ? (payload) => onUpdate(editing.id, payload) : onCreate} />}
+    </div>
+  );
+}
+
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const aAssigner = missions.filter((m) => m.status === 'envoyee').length;
+  const aRecommander = stock.filter(stockBas).length;
   const nav = [
     { k: 'dashboard', label: 'Tableau de bord', Icon: LayoutDashboard },
     { k: 'missions', label: 'Missions', Icon: ClipboardList, badge: aAssigner },
+    { k: 'stock', label: 'Stock', Icon: Package, badge: aRecommander },
     { k: 'accounts', label: 'Comptes', Icon: Users },
   ];
   return (
@@ -668,8 +829,9 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
         </div>
       </nav>
       <main style={{ maxWidth: 960, margin: '0 auto', padding: '22px 16px 40px' }}>
-        {tab === 'dashboard' ? <Dashboard accounts={accounts} missions={missions} goMissions={() => setTab('missions')} goAccounts={() => setTab('accounts')} />
+        {tab === 'dashboard' ? <Dashboard accounts={accounts} missions={missions} stock={stock} goMissions={() => setTab('missions')} goAccounts={() => setTab('accounts')} goStock={() => setTab('stock')} />
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} />
+          : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
@@ -687,6 +849,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [missions, setMissions] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [stock, setStock] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -760,6 +923,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Stock (admin) */
+  useEffect(() => {
+    if (profile?.type !== 'admin') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('stock').select('*').order('created_at', { ascending: false });
+      if (active && data) setStock(data.map(mapStock));
+    };
+    load();
+    const ch = supabase.channel('stock-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -792,6 +970,25 @@ export default function App() {
   const setStatus = async (id, status) => { await supabase.from('profiles').update({ status }).eq('id', id); };
   const removeAccount = async (id) => { await supabase.from('profiles').delete().eq('id', id); };
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); flash('Lien copié'); } catch (_) { flash('Sélectionnez le lien pour le copier'); } };
+
+  const stockCreate = async (payload) => {
+    const { error } = await supabase.from('stock').insert(payload);
+    if (error) return { error: error.message };
+    flash('Référence ajoutée'); return { ok: true };
+  };
+  const stockUpdate = async (id, payload) => {
+    const { error } = await supabase.from('stock').update(payload).eq('id', id);
+    if (error) return { error: error.message };
+    flash('Référence mise à jour'); return { ok: true };
+  };
+  const stockDelete = async (id) => { await supabase.from('stock').delete().eq('id', id); };
+  const stockAdjust = async (id, delta) => {
+    const item = stock.find((s) => s.id === id);
+    if (!item) return;
+    const q = Math.max(0, (item.quantite || 0) + delta);
+    await supabase.from('stock').update({ quantite: q }).eq('id', id);
+  };
+
   const enableAlerts = async () => {
     unlockAudio();
     const r = await activerNotifications(profile.id);
@@ -818,7 +1015,8 @@ export default function App() {
   if (profile.type === 'admin') {
     return <><GlobalStyle /><AdminShell profile={profile} accounts={accounts} missions={missions} invites={invites}
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
-      onEnableAlerts={enableAlerts} alertsState={alertsState} />
+      onEnableAlerts={enableAlerts} alertsState={alertsState}
+      stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
