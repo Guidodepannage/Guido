@@ -19,6 +19,7 @@ const mapMission = (r) => ({
   tel: r.tel_chauffeur, message: r.message, status: r.status,
   assignedTo: r.assigned_to, assignedName: r.assigned_name,
   clientId: r.client_id, clientCompany: r.client_company,
+  fourniture: r.fourniture,
 });
 const mapAccount = (p) => ({
   id: p.id, type: p.role, name: p.name, company: p.company,
@@ -148,6 +149,16 @@ function Info({ label, value, mono }) {
   );
 }
 
+function FournitureTag({ v }) {
+  if (!v) return null;
+  const guido = v === 'guido';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700, background: guido ? c.amberSoft : c.paper, color: guido ? c.amberDark : c.muted, border: guido ? `1px solid ${c.hazard}` : `1px solid ${c.line}` }}>
+      {guido ? '🛞 Pneu à fournir par Guido' : '✓ Client déjà équipé'}
+    </span>
+  );
+}
+
 /* Carte détaillée d'une mission — affiche toutes les informations saisies */
 function MissionDetail({ m, client }) {
   const dateStr = new Date(m.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -157,6 +168,7 @@ function MissionDetail({ m, client }) {
         <Plate value={m.immat} /><Pill status={m.status} client={client} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: c.ink, marginBottom: 10 }}><MapPin size={15} color={c.amber} /> {m.lieu}</div>
+      {m.fourniture && <div style={{ marginBottom: 10 }}><FournitureTag v={m.fourniture} /></div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: m.message ? 10 : 0 }}>
         <Info label="Type de pneu" value={m.type} mono />
         <Info label="Position" value={m.pos} />
@@ -180,20 +192,21 @@ function ClientView({ missions, onSend }) {
   const [inout, setInout] = useState('');
   const [tel, setTel] = useState('');
   const [message, setMessage] = useState('');
+  const [fourniture, setFourniture] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('new');
 
   const needInout = element === 'Tracteur' && (essieu === 2 || essieu === 3);
   const pos = element && cote && essieu ? `${element} ${cote}${essieu}${needInout && inout ? ' ' + inout : ''}` : '';
-  const valid = lieu.trim() && immat.trim() && type.trim() && tel.trim() && element && cote && essieu && (!needInout || inout);
+  const valid = lieu.trim() && immat.trim() && type.trim() && tel.trim() && element && cote && essieu && (!needInout || inout) && fourniture;
 
   const send = async () => {
     setBusy(true);
-    const ok = await onSend({ lieu: lieu.trim(), immat: immat.trim().toUpperCase(), type: type.trim(), pos, tel: tel.trim(), message: message.trim() });
+    const ok = await onSend({ lieu: lieu.trim(), immat: immat.trim().toUpperCase(), type: type.trim(), pos, tel: tel.trim(), message: message.trim(), fourniture });
     setBusy(false);
     if (ok) {
-      setLieu(''); setImmat(''); setType(''); setTel(''); setElement(''); setCote(''); setEssieu(null); setInout(''); setMessage('');
+      setLieu(''); setImmat(''); setType(''); setTel(''); setElement(''); setCote(''); setEssieu(null); setInout(''); setMessage(''); setFourniture('');
       setSent(true); setTimeout(() => setSent(false), 2600);
     }
   };
@@ -221,6 +234,16 @@ function ClientView({ missions, onSend }) {
             <div><label style={labelStyle}>Type de pneu</label>
               <input style={fieldStyle} list="tp" value={type} onChange={(e) => setType(e.target.value)} placeholder="Ex. 315/80 R22.5" />
               <datalist id="tp">{POS_TYPES.map((t) => <option key={t} value={t} />)}</datalist></div>
+
+            <div>
+              <label style={labelStyle}>Fourniture du pneumatique</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[{ k: 'guido', label: 'Commander via Guido' }, { k: 'client', label: 'Client déjà équipé' }].map((o) => {
+                  const on = fourniture === o.k;
+                  return <button key={o.k} onClick={() => setFourniture(o.k)} style={{ flex: 1, padding: '11px 10px', borderRadius: 10, fontSize: 13.5, fontWeight: 700, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface, color: on ? c.amberDark : c.ink }}>{o.label}</button>;
+                })}
+              </div>
+            </div>
 
             <div>
               <label style={labelStyle}>Position du pneu</label>
@@ -376,6 +399,7 @@ function PrestataireView({ missions, onAdvance, alertMission, onDismissAlert, on
               return (
                 <div key={m.id} style={{ background: c.surface, border: `1px solid ${isNew ? c.amber : c.line}`, borderRadius: 16, padding: 15 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}><Plate value={m.immat} /><Pill status={m.status} /></div>
+                  {m.fourniture && <div style={{ marginBottom: 10 }}><FournitureTag v={m.fourniture} /></div>}
                   {m.message && <NoteBox text={m.message} />}
                   <a href={`https://maps.google.com/?q=${encodeURIComponent(m.lieu)}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
                     <MapPin size={17} color={c.amber} /><span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{m.lieu}</span><Navigation size={15} color={c.muted} />
@@ -536,6 +560,7 @@ function MissionAdminCard({ m, prestataires, onAssign }) {
       <div style={{ fontSize: 13, color: c.ink, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><MapPin size={14} color={c.amber} /> {m.lieu}</div>
       <div style={{ fontSize: 12.5, color: c.muted, marginBottom: 2 }}>Client : <b style={{ color: c.ink }}>{m.clientCompany}</b> · <span className="num">{timeAgo(m.createdAt)}</span></div>
       <div style={{ fontSize: 12.5, color: c.muted }}>{m.type} · {m.pos} · chauffeur <span className="num">{m.tel}</span></div>
+      {m.fourniture && <div style={{ marginTop: 8 }}><FournitureTag v={m.fourniture} /></div>}
       {canAssign ? (
         <div style={{ marginTop: 12 }}>
           {m.status === 'assignee' && <div style={{ fontSize: 12.5, color: c.blue, marginBottom: 7 }}>Assignée à <b>{m.assignedName}</b> · en attente de validation</div>}
@@ -743,6 +768,7 @@ export default function App() {
       client_id: profile.id, client_company: profile.company,
       lieu: p.lieu, immat: p.immat, tyre_type: p.type, tyre_position: p.pos,
       tel_chauffeur: p.tel, message: p.message || null, status: 'envoyee',
+      fourniture: p.fourniture || null,
     });
     if (error) { flash('Erreur : ' + error.message); return false; }
     return true;
