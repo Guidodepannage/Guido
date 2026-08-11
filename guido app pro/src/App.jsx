@@ -21,6 +21,7 @@ const mapMission = (r) => ({
   assignedTo: r.assigned_to, assignedName: r.assigned_name,
   clientId: r.client_id, clientCompany: r.client_company,
   fourniture: r.fourniture,
+  stockId: r.stock_id,
 });
 const mapAccount = (p) => ({
   id: p.id, type: p.role, name: p.name, company: p.company,
@@ -191,7 +192,7 @@ function MissionDetail({ m, client }) {
   );
 }
 
-function ClientView({ missions, onSend }) {
+function ClientView({ missions, onSend, stock = [] }) {
   const [lieu, setLieu] = useState('');
   const [immat, setImmat] = useState('');
   const [type, setType] = useState('');
@@ -202,20 +203,31 @@ function ClientView({ missions, onSend }) {
   const [tel, setTel] = useState('');
   const [message, setMessage] = useState('');
   const [fourniture, setFourniture] = useState('');
+  const [dim, setDim] = useState('');
+  const [offreId, setOffreId] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('new');
 
+  const offres = (stock || []).filter((s) => (s.quantite || 0) > 0);
+  const dimensions = [...new Set(offres.map((o) => o.dimension))].sort();
+  const offresDim = offres.filter((o) => o.dimension === dim);
+  const chosenOffre = offres.find((o) => o.id === offreId);
+
   const needInout = element === 'Tracteur' && (essieu === 2 || essieu === 3);
   const pos = element && cote && essieu ? `${element} ${cote}${essieu}${needInout && inout ? ' ' + inout : ''}` : '';
-  const valid = lieu.trim() && immat.trim() && type.trim() && tel.trim() && element && cote && essieu && (!needInout || inout) && fourniture;
+  const typeFinal = fourniture === 'guido'
+    ? (chosenOffre ? `${chosenOffre.dimension}${chosenOffre.marque ? ' ' + chosenOffre.marque : ''}` : '')
+    : type.trim();
+  const pneuOk = fourniture === 'guido' ? !!offreId : !!type.trim();
+  const valid = lieu.trim() && immat.trim() && tel.trim() && element && cote && essieu && (!needInout || inout) && fourniture && pneuOk;
 
   const send = async () => {
     setBusy(true);
-    const ok = await onSend({ lieu: lieu.trim(), immat: immat.trim().toUpperCase(), type: type.trim(), pos, tel: tel.trim(), message: message.trim(), fourniture });
+    const ok = await onSend({ lieu: lieu.trim(), immat: immat.trim().toUpperCase(), type: typeFinal, pos, tel: tel.trim(), message: message.trim(), fourniture, stockId: fourniture === 'guido' ? offreId : null });
     setBusy(false);
     if (ok) {
-      setLieu(''); setImmat(''); setType(''); setTel(''); setElement(''); setCote(''); setEssieu(null); setInout(''); setMessage(''); setFourniture('');
+      setLieu(''); setImmat(''); setType(''); setTel(''); setElement(''); setCote(''); setEssieu(null); setInout(''); setMessage(''); setFourniture(''); setDim(''); setOffreId('');
       setSent(true); setTimeout(() => setSent(false), 2600);
     }
   };
@@ -240,19 +252,57 @@ function ClientView({ missions, onSend }) {
               <input style={fieldStyle} value={lieu} onChange={(e) => setLieu(e.target.value)} placeholder="Ex. A6 sortie 14, aire de Nemours" /></div>
             <div><label style={labelStyle}>Immatriculation</label>
               <input style={{ ...fieldStyle, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'ui-monospace, Menlo, monospace' }} value={immat} onChange={(e) => setImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
-            <div><label style={labelStyle}>Type de pneu</label>
-              <input style={fieldStyle} list="tp" value={type} onChange={(e) => setType(e.target.value)} placeholder="Ex. 315/80 R22.5" />
-              <datalist id="tp">{POS_TYPES.map((t) => <option key={t} value={t} />)}</datalist></div>
 
             <div>
               <label style={labelStyle}>Fourniture du pneumatique</label>
               <div style={{ display: 'flex', gap: 8 }}>
                 {[{ k: 'guido', label: 'Commander via Guido' }, { k: 'client', label: 'Client déjà équipé' }].map((o) => {
                   const on = fourniture === o.k;
-                  return <button key={o.k} onClick={() => setFourniture(o.k)} style={{ flex: 1, padding: '11px 10px', borderRadius: 10, fontSize: 13.5, fontWeight: 700, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface, color: on ? c.amberDark : c.ink }}>{o.label}</button>;
+                  return <button key={o.k} onClick={() => { setFourniture(o.k); setType(''); setDim(''); setOffreId(''); }} style={{ flex: 1, padding: '11px 10px', borderRadius: 10, fontSize: 13.5, fontWeight: 700, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface, color: on ? c.amberDark : c.ink }}>{o.label}</button>;
                 })}
               </div>
             </div>
+
+            {fourniture === 'client' && (
+              <div><label style={labelStyle}>Type de pneu</label>
+                <input style={fieldStyle} list="tp" value={type} onChange={(e) => setType(e.target.value)} placeholder="Ex. 315/80 R22.5" />
+                <datalist id="tp">{POS_TYPES.map((t) => <option key={t} value={t} />)}</datalist></div>
+            )}
+
+            {fourniture === 'guido' && (offres.length === 0 ? (
+              <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 10, padding: '11px 13px', fontSize: 13.5, color: c.ink }}>
+                Pneumatique indisponible, choisissez « Client déjà équipé » ou contactez Guido.
+              </div>
+            ) : (
+              <>
+                <div><label style={labelStyle}>Dimension du pneu</label>
+                  <select style={fieldStyle} value={dim} onChange={(e) => { setDim(e.target.value); setOffreId(''); }}>
+                    <option value="">Choisir une dimension…</option>
+                    {dimensions.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select></div>
+                {dim && (
+                  <div>
+                    <label style={labelStyle}>Offre disponible</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {offresDim.map((o) => {
+                        const on = offreId === o.id;
+                        return (
+                          <button key={o.id} onClick={() => setOffreId(o.id)} style={{ textAlign: 'left', padding: '12px 13px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                              <div>
+                                <div className="num" style={{ fontSize: 14.5, fontWeight: 800, color: c.ink }}>{o.dimension}</div>
+                                <div style={{ fontSize: 12.5, color: c.muted, marginTop: 2 }}>{o.marque || 'Sans marque'} · {o.etat === 'neuf' ? 'Neuf' : 'Occasion'}{o.etat === 'occasion' && o.usure != null ? ` · usure ${o.usure}%` : ''}</div>
+                              </div>
+                              <div className="num" style={{ fontSize: 16, fontWeight: 800, color: c.amberDark }}>{o.prix != null ? `${o.prix} €` : '—'}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            ))}
 
             <div>
               <label style={labelStyle}>Position du pneu</label>
@@ -923,9 +973,9 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
-  /* Stock (admin) */
+  /* Stock (admin : gestion ; client : catalogue des offres) */
   useEffect(() => {
-    if (profile?.type !== 'admin') return;
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
     let active = true;
     const load = async () => {
       const { data } = await supabase.from('stock').select('*').order('created_at', { ascending: false });
@@ -947,6 +997,7 @@ export default function App() {
       lieu: p.lieu, immat: p.immat, tyre_type: p.type, tyre_position: p.pos,
       tel_chauffeur: p.tel, message: p.message || null, status: 'envoyee',
       fourniture: p.fourniture || null,
+      stock_id: p.stockId || null,
     });
     if (error) { flash('Erreur : ' + error.message); return false; }
     return true;
@@ -1033,7 +1084,7 @@ export default function App() {
       <GlobalStyle />
       <FieldShell user={profile} onLogout={logout}>
         {profile.type === 'client'
-          ? <ClientView missions={missions} onSend={createMission} />
+          ? <ClientView missions={missions} onSend={createMission} stock={stock} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
       </FieldShell>
       {toast && <div className="pop" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: c.ink, color: '#fff', borderRadius: 12, padding: '11px 18px', fontSize: 14, fontWeight: 600, zIndex: 60 }}>{toast}</div>}
