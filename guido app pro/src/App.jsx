@@ -521,7 +521,46 @@ function FieldShell({ user, children, onLogout }) {
 /* ================================================================== */
 const rowBtn = (color) => ({ flex: 1, border: 'none', borderRight: `1px solid ${c.line}`, background: 'transparent', color, padding: '11px 4px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 });
 
-function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete }) {
+function PneusModal({ client, stock, authorizedIds, onToggle, onClose }) {
+  const [sel, setSel] = useState(new Set(authorizedIds));
+  const toggle = (id) => {
+    const next = new Set(sel);
+    const has = next.has(id);
+    if (has) next.delete(id); else next.add(id);
+    setSel(next);
+    onToggle(client.id, id, !has);
+  };
+  const refs = [...stock].sort((a, b) => a.dimension.localeCompare(b.dimension));
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 50 }}>
+      <div className="pop" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: c.surface, borderRadius: 18, padding: 22, maxHeight: '90dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Package size={19} color={c.amber} /><h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: c.ink }}>Pneus autorisés</h2></div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: 'transparent', color: c.muted }}><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 13, color: c.muted, marginBottom: 16 }}>Cochez les références que <b style={{ color: c.ink }}>{client.company}</b> peut commander.</div>
+        {refs.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '24px 0' }}>Aucune référence en stock. Ajoutez-en dans l'onglet Stock.</div>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {refs.map((s) => {
+            const on = sel.has(s.id);
+            return (
+              <button key={s.id} onClick={() => toggle(s.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '11px 13px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amber : c.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={15} color="#fff" />}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="num" style={{ fontSize: 14, fontWeight: 800, color: c.ink }}>{s.dimension}</div>
+                  <div style={{ fontSize: 12, color: c.muted }}>{s.marque || 'Sans marque'} · {s.etat === 'neuf' ? 'Neuf' : 'Occasion'}{s.prix != null ? ` · ${s.prix} €` : ''} · {s.quantite} en stock</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={onClose} style={{ marginTop: 18, width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 15, fontWeight: 800 }}>Terminé</button>
+      </div>
+    </div>
+  );
+}
+
+function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus }) {
   return (
     <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 15, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px' }}>
@@ -540,6 +579,11 @@ function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete }) {
             <button onClick={() => onCopy(inviteLink)} style={{ flexShrink: 0, border: 'none', background: c.ink, color: '#fff', borderRadius: 11, padding: '0 14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Copy size={15} /> Copier</button>
           </div>
         </div>
+      )}
+      {a.type === 'client' && (
+        <button onClick={() => onManagePneus(a)} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: c.paper, color: c.blue, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+          <Package size={16} /> Pneus autorisés{nbPneus ? ` (${nbPneus})` : ''}
+        </button>
       )}
       <div style={{ borderTop: `1px solid ${c.line}`, display: 'flex' }}>
         {a.status === 'actif' && <button onClick={() => onStatus(a.id, 'suspendu')} style={rowBtn(c.muted)}><Power size={15} /> Suspendre</button>}
@@ -667,8 +711,10 @@ function AdminMissions({ missions, accounts, onAssign }) {
   );
 }
 
-function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete }) {
+function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth }) {
   const [filter, setFilter] = useState('all'); const [q, setQ] = useState('');
+  const [pneusClient, setPneusClient] = useState(null);
+  const authIdsFor = (id) => clientStock.filter((r) => r.client_id === id).map((r) => r.stock_id);
   const filters = [{ k: 'all', label: 'Tous' }, { k: 'client', label: 'Clients' }, { k: 'prestataire', label: 'Prestataires' }, { k: 'invite', label: 'Invités' }];
   const shown = accounts.filter((a) => {
     if (a.type === 'admin') return false;
@@ -691,8 +737,17 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete })
       </div>
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0' }}>Aucun compte.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} />)}
+        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} />)}
       </div>
+      {pneusClient && (
+        <PneusModal
+          client={pneusClient}
+          stock={stock}
+          authorizedIds={authIdsFor(pneusClient.id)}
+          onToggle={onToggleAuth}
+          onClose={() => setPneusClient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -845,7 +900,7 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const aAssigner = missions.filter((m) => m.status === 'envoyee').length;
@@ -882,7 +937,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
         {tab === 'dashboard' ? <Dashboard accounts={accounts} missions={missions} stock={stock} goMissions={() => setTab('missions')} goAccounts={() => setTab('accounts')} goStock={() => setTab('stock')} />
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
-          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} />}
+          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
       {toast && <div className="pop" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: c.ink, color: '#fff', borderRadius: 12, padding: '11px 18px', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, zIndex: 60 }}><Check size={16} color={c.green} /> {toast}</div>}
@@ -900,6 +955,7 @@ export default function App() {
   const [missions, setMissions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [stock, setStock] = useState([]);
+  const [clientStock, setClientStock] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -988,6 +1044,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Autorisations pneus par client */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('client_stock').select('*');
+      if (active && data) setClientStock(data);
+    };
+    load();
+    const ch = supabase.channel('cs-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_stock' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -1039,6 +1110,10 @@ export default function App() {
     const q = Math.max(0, (item.quantite || 0) + delta);
     await supabase.from('stock').update({ quantite: q }).eq('id', id);
   };
+  const authToggle = async (clientId, stockId, allowed) => {
+    if (allowed) await supabase.from('client_stock').insert({ client_id: clientId, stock_id: stockId });
+    else await supabase.from('client_stock').delete().eq('client_id', clientId).eq('stock_id', stockId);
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -1067,7 +1142,8 @@ export default function App() {
     return <><GlobalStyle /><AdminShell profile={profile} accounts={accounts} missions={missions} invites={invites}
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
       onEnableAlerts={enableAlerts} alertsState={alertsState}
-      stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust} />
+      stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
+      clientStock={clientStock} onToggleAuth={authToggle} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -1084,7 +1160,7 @@ export default function App() {
       <GlobalStyle />
       <FieldShell user={profile} onLogout={logout}>
         {profile.type === 'client'
-          ? <ClientView missions={missions} onSend={createMission} stock={stock} />
+          ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
       </FieldShell>
       {toast && <div className="pop" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: c.ink, color: '#fff', borderRadius: 12, padding: '11px 18px', fontSize: 14, fontWeight: 600, zIndex: 60 }}>{toast}</div>}
