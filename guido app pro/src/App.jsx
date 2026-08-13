@@ -3,7 +3,7 @@ import {
   Truck, Send, MapPin, Phone, CheckCircle2, Navigation, Flag, Bell, Radio,
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
-  Package, Minus, Pencil, AlertTriangle
+  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -496,7 +496,60 @@ function PrestataireView({ missions, onAdvance, alertMission, onDismissAlert, on
   );
 }
 
+function PasswordModal({ onClose }) {
+  const [p1, setP1] = useState('');
+  const [p2, setP2] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState(false);
+  const valid = p1.length >= 6 && p1 === p2;
+
+  const submit = async () => {
+    setBusy(true); setErr('');
+    const { error } = await supabase.auth.updateUser({ password: p1 });
+    setBusy(false);
+    if (error) {
+      setErr(/different from the old/i.test(error.message) ? "Le nouveau mot de passe doit être différent de l'ancien." : error.message);
+      return;
+    }
+    setOk(true); setTimeout(onClose, 1600);
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 60 }}>
+      <div className="pop" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, background: c.surface, borderRadius: 18, padding: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><KeyRound size={19} color={c.amber} /><h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: c.ink }}>Changer mon mot de passe</h2></div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: 'transparent', color: c.muted }}><X size={20} /></button>
+        </div>
+        {ok ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: c.greenSoft, color: c.green, borderRadius: 12, padding: '13px 15px', fontSize: 14, fontWeight: 600 }}><CheckCircle2 size={18} /> Mot de passe mis à jour</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Nouveau mot de passe</label>
+              <div style={{ position: 'relative' }}>
+                <input type={show ? 'text' : 'password'} style={{ ...fieldStyle, paddingRight: 42 }} value={p1} onChange={(e) => setP1(e.target.value)} placeholder="Au moins 6 caractères" />
+                <button onClick={() => setShow((s) => !s)} aria-label="Afficher" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: c.muted, padding: 6 }}>{show ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>Confirmer le mot de passe</label>
+              <input type={show ? 'text' : 'password'} style={fieldStyle} value={p2} onChange={(e) => setP2(e.target.value)} placeholder="Retapez le mot de passe" />
+            </div>
+            {p2 && p1 !== p2 && <div style={{ color: c.red, fontSize: 12.5 }}>Les deux mots de passe ne correspondent pas.</div>}
+            {err && <div style={{ color: c.red, fontSize: 12.5 }}>{err}</div>}
+            <button onClick={submit} disabled={!valid || busy} style={{ marginTop: 2, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 15, fontWeight: 800 }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FieldShell({ user, children, onLogout }) {
+  const [pwd, setPwd] = useState(false);
   return (
     <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: 452, minHeight: '100dvh', background: c.paper, display: 'flex', flexDirection: 'column', boxShadow: '0 0 44px rgba(0,0,0,0.25)' }}>
@@ -506,12 +559,16 @@ function FieldShell({ user, children, onLogout }) {
               <img src="/logo-emblem.png" alt="Guido" style={{ width: 34, height: 34, objectFit: 'contain' }} />
               <div><div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>Guido</div><div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>{user.company} · <span style={{ textTransform: 'capitalize' }}>{user.type}</span></div></div>
             </div>
-            <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 12.5, fontWeight: 600 }}><LogOut size={14} /> Quitter</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setPwd(true)} aria-label="Mon compte" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, fontWeight: 600 }}><KeyRound size={14} /></button>
+              <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 12.5, fontWeight: 600 }}><LogOut size={14} /> Quitter</button>
+            </div>
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
         <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{children}</main>
       </div>
+      {pwd && <PasswordModal onClose={() => setPwd(false)} />}
     </div>
   );
 }
@@ -903,6 +960,7 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
 function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
+  const [pwd, setPwd] = useState(false);
   const aAssigner = missions.filter((m) => m.status === 'envoyee').length;
   const aRecommander = stock.filter(stockBas).length;
   const nav = [
@@ -923,6 +981,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
             {alertsState !== 'on' && (
               <button onClick={onEnableAlerts} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.amber, color: '#fff', border: 'none', borderRadius: 10, padding: '8px 12px', fontSize: 13, fontWeight: 700 }}><BellRing size={15} /> Activer les alertes</button>
             )}
+            <button onClick={() => setPwd(true)} aria-label="Mon compte" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 13, fontWeight: 600 }}><KeyRound size={15} /></button>
             <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 13px', fontSize: 13, fontWeight: 600 }}><LogOut size={15} /> Déconnexion</button>
           </div>
         </div>
@@ -940,6 +999,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
+      {pwd && <PasswordModal onClose={() => setPwd(false)} />}
       {toast && <div className="pop" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: c.ink, color: '#fff', borderRadius: 12, padding: '11px 18px', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, zIndex: 60 }}><Check size={16} color={c.green} /> {toast}</div>}
     </div>
   );
