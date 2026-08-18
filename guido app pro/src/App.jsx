@@ -712,7 +712,7 @@ function Dashboard({ accounts, missions, stock = [], goMissions, goAccounts, goS
   );
 }
 
-function MissionAdminCard({ m, prestataires, onAssign }) {
+function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
   const [sel, setSel] = useState(m.assignedTo || '');
   const canAssign = m.status === 'envoyee' || m.status === 'assignee';
   return (
@@ -726,6 +726,8 @@ function MissionAdminCard({ m, prestataires, onAssign }) {
       {canAssign ? (
         <div style={{ marginTop: 12 }}>
           {m.status === 'assignee' && <div style={{ fontSize: 12.5, color: c.blue, marginBottom: 7 }}>Assignée à <b>{m.assignedName}</b> · en attente de validation</div>}
+          <button onClick={() => onTakeCharge(m.id)} style={{ width: '100%', border: `1.5px solid ${c.amber}`, background: c.amberSoft, color: c.amberDark, borderRadius: 11, padding: '11px', fontWeight: 800, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 10 }}><Flag size={16} /> Prendre en charge moi-même</button>
+          <div style={{ fontSize: 11.5, color: c.muted, textAlign: 'center', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>ou répartir à un prestataire</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ ...fieldStyle, flex: 1 }}>
               <option value="">Choisir un prestataire…</option>
@@ -743,7 +745,7 @@ function MissionAdminCard({ m, prestataires, onAssign }) {
   );
 }
 
-function AdminMissions({ missions, accounts, onAssign }) {
+function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
   const [filter, setFilter] = useState('all');
   const prestataires = accounts.filter((a) => a.type === 'prestataire' && a.status === 'actif');
   const filters = [{ k: 'all', label: 'Toutes' }, { k: 'todo', label: 'À assigner' }, { k: 'progress', label: 'En cours' }, { k: 'done', label: 'Terminées' }];
@@ -759,11 +761,70 @@ function AdminMissions({ missions, accounts, onAssign }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 2 }}>
         {filters.map((f) => { const on = filter === f.k; return <button key={f.k} onClick={() => setFilter(f.k)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: `1px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.muted }}>{f.label}</button>; })}
       </div>
-      {prestataires.length === 0 && <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '12px 14px', fontSize: 13.5, color: c.ink, marginBottom: 14 }}>Créez d'abord un compte prestataire pour assigner les missions.</div>}
+      {prestataires.length === 0 && <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '12px 14px', fontSize: 13.5, color: c.ink, marginBottom: 14 }}>Astuce : créez un compte prestataire pour répartir, ou prenez la mission en charge vous-même.</div>}
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0' }}>Aucune mission ici.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {shown.map((m) => <MissionAdminCard key={m.id} m={m} prestataires={prestataires} onAssign={onAssign} />)}
+        {shown.map((m) => <MissionAdminCard key={m.id} m={m} prestataires={prestataires} onAssign={onAssign} onTakeCharge={onTakeCharge} />)}
       </div>
+    </div>
+  );
+}
+
+function MyInterventions({ missions, profileId, onAdvance }) {
+  const mine = missions.filter((m) => m.assignedTo === profileId);
+  const active = mine.filter((m) => m.status !== 'terminee').sort((a, b) => b.createdAt - a.createdAt);
+  const done = mine.filter((m) => m.status === 'terminee').sort((a, b) => b.createdAt - a.createdAt);
+  const [tab, setTab] = useState('active');
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Mes interventions</h1>
+      <div style={{ display: 'flex', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: 4, marginBottom: 16 }}>
+        {[{ k: 'active', label: `En cours${active.length ? ` (${active.length})` : ''}` }, { k: 'history', label: `Historique${done.length ? ` (${done.length})` : ''}` }].map((t) => {
+          const on = tab === t.k;
+          return <button key={t.k} onClick={() => setTab(t.k)} style={{ flex: 1, padding: '10px', borderRadius: 9, border: 'none', fontSize: 14, fontWeight: 700, background: on ? c.ink : 'transparent', color: on ? '#fff' : c.muted }}>{t.label}</button>;
+        })}
+      </div>
+      {tab === 'active' ? (
+        active.length === 0 ? (
+          <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune intervention en cours.<br />Prenez une mission en charge depuis l'onglet Missions.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {active.map((m) => {
+              const step = PREST_NEXT[m.status];
+              return (
+                <div key={m.id} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 15 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}><Plate value={m.immat} /><Pill status={m.status} /></div>
+                  {m.fourniture && <div style={{ marginBottom: 10 }}><FournitureTag v={m.fourniture} /></div>}
+                  {m.message && <NoteBox text={m.message} />}
+                  <a href={`https://maps.google.com/?q=${encodeURIComponent(m.lieu)}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <MapPin size={17} color={c.amber} /><span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{m.lieu}</span><Navigation size={15} color={c.muted} />
+                  </a>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1, background: c.paper, borderRadius: 10, padding: '9px 11px' }}><div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>Type de pneu</div><div className="num" style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{m.type}</div></div>
+                    <div style={{ flex: 1, background: c.paper, borderRadius: 10, padding: '9px 11px' }}><div style={{ fontSize: 11, color: c.muted, marginBottom: 2 }}>Position</div><div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{m.pos}</div></div>
+                  </div>
+                  <a href={`tel:${(m.tel || '').replace(/\s/g, '')}`} style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: c.ink, background: c.paper, borderRadius: 10, padding: '10px 12px' }}>
+                    <Phone size={17} color={c.green} /><span style={{ flex: 1, fontSize: 13, color: c.muted }}>Chauffeur</span><span className="num" style={{ fontSize: 14.5, fontWeight: 700 }}>{m.tel}</span>
+                  </a>
+                  {step && (
+                    <button onClick={() => onAdvance(m.id, m.status)} style={{ marginTop: 12, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <CheckCircle2 size={17} /> {step.label}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        done.length === 0 ? (
+          <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune intervention terminée.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {done.map((m) => <MissionDetail key={m.id} m={m} />)}
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -957,15 +1018,17 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
   const aAssigner = missions.filter((m) => m.status === 'envoyee').length;
   const aRecommander = stock.filter(stockBas).length;
+  const mesInterventions = missions.filter((m) => m.assignedTo === profile.id && m.status !== 'terminee').length;
   const nav = [
     { k: 'dashboard', label: 'Tableau de bord', Icon: LayoutDashboard },
     { k: 'missions', label: 'Missions', Icon: ClipboardList, badge: aAssigner },
+    { k: 'interventions', label: 'Mes interventions', Icon: Flag, badge: mesInterventions },
     { k: 'stock', label: 'Stock', Icon: Package, badge: aRecommander },
     { k: 'accounts', label: 'Comptes', Icon: Users },
   ];
@@ -994,7 +1057,8 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
       </nav>
       <main style={{ maxWidth: 960, margin: '0 auto', padding: '22px 16px 40px' }}>
         {tab === 'dashboard' ? <Dashboard accounts={accounts} missions={missions} stock={stock} goMissions={() => setTab('missions')} goAccounts={() => setTab('accounts')} goStock={() => setTab('stock')} />
-          : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} />
+          : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} />
+          : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} />}
       </main>
@@ -1141,6 +1205,12 @@ export default function App() {
     const p = accounts.find((a) => a.id === prestId);
     await supabase.from('missions').update({ status: 'assignee', assigned_to: prestId, assigned_name: p ? p.company : '' }).eq('id', id);
   };
+  const takeCharge = async (id) => {
+    // L'admin prend la mission : statut direct "prise_en_charge" (pas "assignee")
+    // => le déclencheur d'appel (qui ne réagit qu'à "assignee") ne se déclenche pas : pas de double appel.
+    await supabase.from('missions').update({ status: 'prise_en_charge', assigned_to: profile.id, assigned_name: 'Guido' }).eq('id', id);
+    flash('Mission prise en charge');
+  };
   const createAccount = async (data) => {
     const { data: res, error } = await supabase.functions.invoke('creer-compte', { body: data });
     if (error) return { error: error.message };
@@ -1203,7 +1273,7 @@ export default function App() {
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
       onEnableAlerts={enableAlerts} alertsState={alertsState}
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
-      clientStock={clientStock} onToggleAuth={authToggle} />
+      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
