@@ -816,20 +816,35 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
 
 function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
   const [filter, setFilter] = useState('all');
+  const [clientFilter, setClientFilter] = useState('');
   const prestataires = accounts.filter((a) => a.type === 'prestataire' && a.status === 'actif');
+  const clients = accounts.filter((a) => a.type === 'client').sort((a, b) => (a.company || '').localeCompare(b.company || ''));
   const filters = [{ k: 'all', label: 'Toutes' }, { k: 'todo', label: 'À assigner' }, { k: 'progress', label: 'En cours' }, { k: 'done', label: 'Terminées' }];
   const shown = missions.filter((m) => {
+    if (clientFilter && m.clientId !== clientFilter) return false;
     if (filter === 'todo') return m.status === 'envoyee';
     if (filter === 'progress') return m.status === 'assignee' || m.status === 'prise_en_charge';
     if (filter === 'done') return m.status === 'terminee';
     return true;
   }).sort((a, b) => b.createdAt - a.createdAt);
+  const clientChoisi = clients.find((cl) => cl.id === clientFilter);
   return (
     <div>
       <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Missions</h1>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}><Users size={14} color={c.muted} /> Filtrer par client</label>
+        <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={fieldStyle}>
+          <option value="">Tous les clients</option>
+          {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.company} — {cl.name}</option>)}
+        </select>
+      </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 2 }}>
         {filters.map((f) => { const on = filter === f.k; return <button key={f.k} onClick={() => setFilter(f.k)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: `1px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.muted }}>{f.label}</button>; })}
       </div>
+      {clientChoisi && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: c.blueSoft, borderRadius: 11, padding: '10px 13px', marginBottom: 14 }}>
+        <span style={{ fontSize: 13.5, color: c.ink }}>Historique de <b>{clientChoisi.company}</b> · {shown.length} mission{shown.length > 1 ? 's' : ''}</span>
+        <button onClick={() => setClientFilter('')} style={{ border: 'none', background: 'transparent', color: c.blue, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}><X size={14} /> Effacer</button>
+      </div>}
       {prestataires.length === 0 && <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '12px 14px', fontSize: 13.5, color: c.ink, marginBottom: 14 }}>Astuce : créez un compte prestataire pour répartir, ou prenez la mission en charge vous-même.</div>}
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0' }}>Aucune mission ici.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
