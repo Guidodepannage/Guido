@@ -617,7 +617,9 @@ function PneusModal({ client, stock, authorizedIds, onToggle, onClose }) {
   );
 }
 
-function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus }) {
+function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus, onRegenLink }) {
+  const [regen, setRegen] = useState(false);
+  const doRegen = async () => { setRegen(true); await onRegenLink(a); setRegen(false); };
   return (
     <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 15, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px' }}>
@@ -636,6 +638,11 @@ function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus,
             <button onClick={() => onCopy(inviteLink)} style={{ flexShrink: 0, border: 'none', background: c.ink, color: '#fff', borderRadius: 11, padding: '0 14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Copy size={15} /> Copier</button>
           </div>
         </div>
+      )}
+      {a.status === 'invite' && !inviteLink && (
+        <button onClick={doRegen} disabled={regen} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: c.paper, color: c.amberDark, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+          <KeyRound size={16} /> {regen ? 'Génération…' : "Revoir le lien d'invitation"}
+        </button>
       )}
       {a.type === 'client' && (
         <button onClick={() => onManagePneus(a)} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: c.paper, color: c.blue, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
@@ -829,7 +836,7 @@ function MyInterventions({ missions, profileId, onAdvance }) {
   );
 }
 
-function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth }) {
+function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth, onRegenLink }) {
   const [filter, setFilter] = useState('all'); const [q, setQ] = useState('');
   const [pneusClient, setPneusClient] = useState(null);
   const authIdsFor = (id) => clientStock.filter((r) => r.client_id === id).map((r) => r.stock_id);
@@ -855,7 +862,7 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, s
       </div>
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0' }}>Aucun compte.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} />)}
+        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} onRegenLink={onRegenLink} />)}
       </div>
       {pneusClient && (
         <PneusModal
@@ -1018,7 +1025,7 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1060,7 +1067,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
-          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} />}
+          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
       {pwd && <PasswordModal onClose={() => setPwd(false)} />}
@@ -1219,6 +1226,12 @@ export default function App() {
     flash("Compte créé — lien d'invitation prêt");
     return { ok: true };
   };
+  const regenLink = async (account) => {
+    const { data: res, error } = await supabase.functions.invoke('regenerer-lien', { body: { email: account.email } });
+    if (error) { flash('Erreur : ' + error.message); return; }
+    if (res?.error) { flash('Erreur : ' + res.error); return; }
+    if (res?.inviteLink) { setInvites((x) => ({ ...x, [account.id]: res.inviteLink })); flash('Nouveau lien généré'); }
+  };
   const setStatus = async (id, status) => { await supabase.from('profiles').update({ status }).eq('id', id); };
   const removeAccount = async (id) => { await supabase.from('profiles').delete().eq('id', id); };
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); flash('Lien copié'); } catch (_) { flash('Sélectionnez le lien pour le copier'); } };
@@ -1273,7 +1286,7 @@ export default function App() {
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
       onEnableAlerts={enableAlerts} alertsState={alertsState}
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
-      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} />
+      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
