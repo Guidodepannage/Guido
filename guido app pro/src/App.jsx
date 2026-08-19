@@ -548,7 +548,59 @@ function PasswordModal({ onClose }) {
   );
 }
 
-function FieldShell({ user, children, onLogout }) {
+function ContactView({ contact }) {
+  const rows = [
+    { icon: Mail, label: 'E-mail', value: contact?.email },
+    { icon: Phone, label: 'Téléphone', value: contact?.phone },
+    { icon: MapPin, label: 'Adresse du siège', value: contact?.adresse },
+  ];
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Contact</h1>
+      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Une question ou une réclamation ? Contactez Guido.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '15px 16px' }}>
+            <div style={{ width: 42, height: 42, borderRadius: 11, background: c.amberSoft, color: c.amberDark, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><r.icon size={20} /></div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11.5, color: c.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>{r.label}</div>
+              <div style={{ fontSize: 15.5, fontWeight: 700, color: c.ink, wordBreak: 'break-word' }}>{r.value || '—'}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminContact({ contact, onSave }) {
+  const [email, setEmail] = useState(contact?.email || '');
+  const [phone, setPhone] = useState(contact?.phone || '');
+  const [adresse, setAdresse] = useState(contact?.adresse || '');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const submit = async () => {
+    setBusy(true); setDone(false);
+    await onSave({ email: email.trim(), phone: phone.trim(), adresse: adresse.trim() });
+    setBusy(false); setDone(true); setTimeout(() => setDone(false), 2200);
+  };
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 4px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Coordonnées de contact</h1>
+      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Ces informations sont affichées aux clients et prestataires dans leur onglet « Contact ».</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, maxWidth: 460 }}>
+        <div><label style={labelStyle}>E-mail de contact</label><input style={fieldStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="contact@…" /></div>
+        <div><label style={labelStyle}>Téléphone</label><input style={fieldStyle} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
+        <div><label style={labelStyle}>Adresse du siège</label><input style={fieldStyle} value={adresse} onChange={(e) => setAdresse(e.target.value)} placeholder="15 rue de Reuilly, Paris 12" /></div>
+        <button onClick={submit} disabled={busy} style={{ marginTop: 2, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800 }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+        {done && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: c.green, fontSize: 13.5, fontWeight: 600 }}><CheckCircle2 size={16} /> Coordonnées mises à jour</div>}
+      </div>
+    </div>
+  );
+}
+
+function FieldShell({ user, children, onLogout, contact }) {
+  const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   return (
     <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', justifyContent: 'center' }}>
@@ -566,7 +618,17 @@ function FieldShell({ user, children, onLogout }) {
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{children}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : <ContactView contact={contact} />}</main>
+        <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
+          {[{ k: 'main', label: 'Accueil', Icon: LayoutDashboard }, { k: 'contact', label: 'Contact', Icon: Mail }].map((t) => {
+            const on = view === t.k;
+            return (
+              <button key={t.k} onClick={() => setView(t.k)} style={{ flex: 1, border: 'none', background: 'transparent', color: on ? c.amberDark : c.muted, padding: '10px 4px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, fontSize: 11.5, fontWeight: 700 }}>
+                <t.Icon size={20} /> {t.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
       {pwd && <PasswordModal onClose={() => setPwd(false)} />}
     </div>
@@ -1025,7 +1087,7 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1037,6 +1099,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
     { k: 'missions', label: 'Missions', Icon: ClipboardList, badge: aAssigner },
     { k: 'interventions', label: 'Mes interventions', Icon: Flag, badge: mesInterventions },
     { k: 'stock', label: 'Stock', Icon: Package, badge: aRecommander },
+    { k: 'contact', label: 'Contact', Icon: Mail },
     { k: 'accounts', label: 'Comptes', Icon: Users },
   ];
   return (
@@ -1067,6 +1130,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
+          : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
@@ -1087,6 +1151,7 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [stock, setStock] = useState([]);
   const [clientStock, setClientStock] = useState([]);
+  const [contact, setContact] = useState(null);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -1190,6 +1255,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Coordonnées de contact (tous rôles) */
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('parametres').select('*').eq('id', 1).single();
+      if (active && data) setContact({ email: data.contact_email, phone: data.contact_phone, adresse: data.contact_adresse });
+    };
+    load();
+    const ch = supabase.channel('param-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'parametres' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -1257,6 +1337,10 @@ export default function App() {
     if (allowed) await supabase.from('client_stock').insert({ client_id: clientId, stock_id: stockId });
     else await supabase.from('client_stock').delete().eq('client_id', clientId).eq('stock_id', stockId);
   };
+  const saveContact = async (fields) => {
+    await supabase.from('parametres').update({ contact_email: fields.email, contact_phone: fields.phone, contact_adresse: fields.adresse, updated_at: new Date().toISOString() }).eq('id', 1);
+    flash('Coordonnées mises à jour');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -1286,7 +1370,7 @@ export default function App() {
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
       onEnableAlerts={enableAlerts} alertsState={alertsState}
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
-      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} />
+      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -1301,7 +1385,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout}>
+      <FieldShell user={profile} onLogout={logout} contact={contact}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
