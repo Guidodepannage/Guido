@@ -817,17 +817,39 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
 function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
   const [filter, setFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('');
+  const [periode, setPeriode] = useState('all');
+  const [dateDebut, setDateDebut] = useState('');
+  const [dateFin, setDateFin] = useState('');
   const prestataires = accounts.filter((a) => a.type === 'prestataire' && a.status === 'actif');
   const clients = accounts.filter((a) => a.type === 'client').sort((a, b) => (a.company || '').localeCompare(b.company || ''));
   const filters = [{ k: 'all', label: 'Toutes' }, { k: 'todo', label: 'À assigner' }, { k: 'progress', label: 'En cours' }, { k: 'done', label: 'Terminées' }];
+  const periodes = [{ k: 'all', label: 'Toute période' }, { k: 'today', label: "Aujourd'hui" }, { k: '7', label: '7 jours' }, { k: '30', label: '30 jours' }, { k: '90', label: '3 mois' }];
+
+  const now = new Date();
+  const bornePeriode = (m) => {
+    if (dateDebut || dateFin) {
+      const d = new Date(m.createdAt);
+      if (dateDebut && d < new Date(dateDebut + 'T00:00:00')) return false;
+      if (dateFin && d > new Date(dateFin + 'T23:59:59')) return false;
+      return true;
+    }
+    if (periode === 'all') return true;
+    if (periode === 'today') { const d = new Date(m.createdAt); return d.toDateString() === now.toDateString(); }
+    const jours = parseInt(periode, 10);
+    return m.createdAt >= now.getTime() - jours * 86400000;
+  };
+
   const shown = missions.filter((m) => {
     if (clientFilter && m.clientId !== clientFilter) return false;
+    if (!bornePeriode(m)) return false;
     if (filter === 'todo') return m.status === 'envoyee';
     if (filter === 'progress') return m.status === 'assignee' || m.status === 'prise_en_charge';
     if (filter === 'done') return m.status === 'terminee';
     return true;
   }).sort((a, b) => b.createdAt - a.createdAt);
   const clientChoisi = clients.find((cl) => cl.id === clientFilter);
+  const datesActives = dateDebut || dateFin;
+
   return (
     <div>
       <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Missions</h1>
@@ -838,6 +860,18 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
           {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.company} — {cl.name}</option>)}
         </select>
       </div>
+
+      <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}><Clock size={14} color={c.muted} /> Période</label>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, overflowX: 'auto', paddingBottom: 2 }}>
+        {periodes.map((p) => { const on = !datesActives && periode === p.k; return <button key={p.k} onClick={() => { setPeriode(p.k); setDateDebut(''); setDateFin(''); }} style={{ flexShrink: 0, padding: '7px 13px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: `1px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface, color: on ? c.amberDark : c.muted }}>{p.label}</button>; })}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <input type="date" value={dateDebut} onChange={(e) => { setDateDebut(e.target.value); setPeriode('all'); }} style={{ ...fieldStyle, flex: 1, padding: '9px 10px', fontSize: 13 }} />
+        <span style={{ color: c.muted, fontSize: 13 }}>au</span>
+        <input type="date" value={dateFin} onChange={(e) => { setDateFin(e.target.value); setPeriode('all'); }} style={{ ...fieldStyle, flex: 1, padding: '9px 10px', fontSize: 13 }} />
+        {datesActives && <button onClick={() => { setDateDebut(''); setDateFin(''); }} aria-label="Effacer les dates" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.muted, borderRadius: 9, padding: '9px 10px' }}><X size={15} /></button>}
+      </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 2 }}>
         {filters.map((f) => { const on = filter === f.k; return <button key={f.k} onClick={() => setFilter(f.k)} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, border: `1px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.muted }}>{f.label}</button>; })}
       </div>
@@ -846,7 +880,7 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
         <button onClick={() => setClientFilter('')} style={{ border: 'none', background: 'transparent', color: c.blue, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}><X size={14} /> Effacer</button>
       </div>}
       {prestataires.length === 0 && <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '12px 14px', fontSize: 13.5, color: c.ink, marginBottom: 14 }}>Astuce : créez un compte prestataire pour répartir, ou prenez la mission en charge vous-même.</div>}
-      {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0' }}>Aucune mission ici.</div>}
+      {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0' }}>Aucune mission ne correspond à ces filtres.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {shown.map((m) => <MissionAdminCard key={m.id} m={m} prestataires={prestataires} onAssign={onAssign} onTakeCharge={onTakeCharge} />)}
       </div>
