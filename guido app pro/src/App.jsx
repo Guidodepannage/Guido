@@ -806,6 +806,10 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge, onDecline }
           </div>
           <button onClick={() => onDecline(m)} style={{ display: 'block', margin: '12px auto 0', border: 'none', background: 'transparent', color: c.red, fontSize: 12.5, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}>Décliner cette demande</button>
         </div>
+      ) : m.status === 'declinee' ? (
+        <div style={{ marginTop: 12, fontSize: 13, color: c.red, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+          <X size={15} color={c.red} /> Demande déclinée
+        </div>
       ) : (
         <div style={{ marginTop: 12, fontSize: 13, color: c.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
           <CheckCircle2 size={15} color={c.green} /> {m.status === 'terminee' ? 'Terminée par' : 'Prise en charge par'} <b style={{ color: c.green }}>{m.assignedName}</b>
@@ -823,7 +827,7 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [],
   const [dateFin, setDateFin] = useState('');
   const prestataires = accounts.filter((a) => a.type === 'prestataire' && a.status === 'actif');
   const clients = accounts.filter((a) => a.type === 'client').sort((a, b) => (a.company || '').localeCompare(b.company || ''));
-  const filters = [{ k: 'all', label: 'Toutes' }, { k: 'todo', label: 'À assigner' }, { k: 'progress', label: 'En cours' }, { k: 'done', label: 'Terminées' }];
+  const filters = [{ k: 'all', label: 'Toutes' }, { k: 'todo', label: 'À assigner' }, { k: 'progress', label: 'En cours' }, { k: 'done', label: 'Terminées' }, { k: 'declined', label: 'Déclinées' }];
   const periodes = [{ k: 'all', label: 'Toute période' }, { k: 'today', label: "Aujourd'hui" }, { k: '7', label: '7 jours' }, { k: '30', label: '30 jours' }, { k: '90', label: '3 mois' }];
 
   const now = new Date();
@@ -841,13 +845,14 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [],
   };
 
   const shown = missions.filter((m) => {
-    if (m.status === 'declinee') return false;
     if (clientFilter && m.clientId !== clientFilter) return false;
     if (!bornePeriode(m)) return false;
     if (filter === 'todo') return m.status === 'envoyee';
     if (filter === 'progress') return m.status === 'assignee' || m.status === 'prise_en_charge';
     if (filter === 'done') return m.status === 'terminee';
-    return true;
+    if (filter === 'declined') return m.status === 'declinee';
+    // Vue "Toutes" : on masque les déclinées (visibles via leur filtre dédié)
+    return m.status !== 'declinee';
   }).sort((a, b) => b.createdAt - a.createdAt);
   const clientChoisi = clients.find((cl) => cl.id === clientFilter);
   const datesActives = dateDebut || dateFin;
