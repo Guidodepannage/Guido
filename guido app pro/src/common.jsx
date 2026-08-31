@@ -23,12 +23,14 @@ export const MSTATUS = {
   assignee:        { label: 'Assignée',        bg: c.blueSoft,  fg: c.blue,      dot: c.blue },
   prise_en_charge: { label: 'Prise en charge', bg: c.greenSoft, fg: c.green,     dot: c.green },
   terminee:        { label: 'Terminée',        bg: c.line,      fg: c.muted,     dot: c.muted },
+  declinee:        { label: 'Déclinée',        bg: c.redSoft,   fg: c.red,       dot: c.red },
 };
 export const CLIENT_STEP = {
   envoyee:         { label: 'Demande de mission envoyée',         color: c.amber },
   assignee:        { label: 'Demande de mission envoyée',         color: c.amber },
   prise_en_charge: { label: 'Demande de mission prise en charge', color: c.green },
   terminee:        { label: 'Mission terminée',                   color: c.muted },
+  declinee:        { label: 'Demande déclinée — contactez Guido', color: c.red },
 };
 export const PREST_NEXT = {
   assignee:        { to: 'prise_en_charge', label: 'Valider la prise en charge' },
