@@ -781,7 +781,7 @@ function Dashboard({ accounts, missions, stock = [], goMissions, goAccounts, goS
   );
 }
 
-function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
+function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge, onDecline }) {
   const [sel, setSel] = useState(m.assignedTo || '');
   const canAssign = m.status === 'envoyee' || m.status === 'assignee';
   return (
@@ -804,6 +804,7 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
             </select>
             <button onClick={() => sel && onAssign(m.id, sel)} disabled={!sel || sel === m.assignedTo} style={{ flexShrink: 0, border: 'none', borderRadius: 11, padding: '0 16px', fontWeight: 700, fontSize: 14, background: (!sel || sel === m.assignedTo) ? c.line : c.amber, color: (!sel || sel === m.assignedTo) ? c.muted : '#fff' }}>{m.assignedTo ? 'Réassigner' : 'Assigner'}</button>
           </div>
+          <button onClick={() => onDecline(m)} style={{ display: 'block', margin: '12px auto 0', border: 'none', background: 'transparent', color: c.red, fontSize: 12.5, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}>Décliner cette demande</button>
         </div>
       ) : (
         <div style={{ marginTop: 12, fontSize: 13, color: c.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -814,7 +815,7 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
   );
 }
 
-function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [] }) {
+function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [], onDecline }) {
   const [filter, setFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('');
   const [periode, setPeriode] = useState('all');
@@ -840,6 +841,7 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [] 
   };
 
   const shown = missions.filter((m) => {
+    if (m.status === 'declinee') return false;
     if (clientFilter && m.clientId !== clientFilter) return false;
     if (!bornePeriode(m)) return false;
     if (filter === 'todo') return m.status === 'envoyee';
@@ -908,7 +910,7 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [] 
       {prestataires.length === 0 && <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '12px 14px', fontSize: 13.5, color: c.ink, marginBottom: 14 }}>Astuce : créez un compte prestataire pour répartir, ou prenez la mission en charge vous-même.</div>}
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0' }}>Aucune mission ne correspond à ces filtres.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {shown.map((m) => <MissionAdminCard key={m.id} m={m} prestataires={prestataires} onAssign={onAssign} onTakeCharge={onTakeCharge} />)}
+        {shown.map((m) => <MissionAdminCard key={m.id} m={m} prestataires={prestataires} onAssign={onAssign} onTakeCharge={onTakeCharge} onDecline={onDecline} />)}
       </div>
     </div>
   );
@@ -1162,7 +1164,7 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1202,7 +1204,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
       </nav>
       <main style={{ maxWidth: 960, margin: '0 auto', padding: '22px 16px 40px' }}>
         {tab === 'dashboard' ? <Dashboard accounts={accounts} missions={missions} stock={stock} goMissions={() => setTab('missions')} goAccounts={() => setTab('accounts')} goStock={() => setTab('stock')} />
-          : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} />
+          : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
@@ -1373,6 +1375,11 @@ export default function App() {
     await supabase.from('missions').update({ status: 'prise_en_charge', assigned_to: profile.id, assigned_name: 'Guido' }).eq('id', id);
     flash('Mission prise en charge');
   };
+  const decline = async (m) => {
+    if (!window.confirm(`Décliner la demande de ${m.clientCompany} (${m.immat}) ?\nLe client en sera informé et la mission n'apparaîtra plus dans vos interventions.`)) return;
+    await supabase.from('missions').update({ status: 'declinee' }).eq('id', m.id);
+    flash('Demande déclinée');
+  };
   const createAccount = async (data) => {
     const { data: res, error } = await supabase.functions.invoke('creer-compte', { body: data });
     if (error) return { error: error.message };
@@ -1445,7 +1452,7 @@ export default function App() {
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
       onEnableAlerts={enableAlerts} alertsState={alertsState}
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
-      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} />
+      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} onDecline={decline} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
