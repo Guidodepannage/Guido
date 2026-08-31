@@ -192,7 +192,7 @@ function MissionDetail({ m, client }) {
   );
 }
 
-function ClientView({ missions, onSend, stock = [] }) {
+function ClientView({ missions, onSend, stock = [], onEnableAlerts, alertsState }) {
   const [lieu, setLieu] = useState('');
   const [immat, setImmat] = useState('');
   const [type, setType] = useState('');
@@ -238,6 +238,11 @@ function ClientView({ missions, onSend, stock = [] }) {
 
   return (
     <div>
+      {alertsState !== 'on' && (
+        <button onClick={onEnableAlerts} style={{ width: '100%', marginBottom: 14, padding: '12px', borderRadius: 12, border: `1.5px solid ${c.amber}`, background: c.amberSoft, color: c.amberDark, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <BellRing size={17} /> Activer les alertes sur cet appareil
+        </button>
+      )}
       <div style={{ display: 'flex', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: 4, marginBottom: 18 }}>
         {[{ k: 'new', label: 'Nouvelle mission' }, { k: 'history', label: `Historique${mine.length ? ` (${mine.length})` : ''}` }].map((t) => {
           const on = tab === t.k;
@@ -1474,7 +1479,7 @@ export default function App() {
       <GlobalStyle />
       <FieldShell user={profile} onLogout={logout} contact={contact}>
         {profile.type === 'client'
-          ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} />
+          ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
       </FieldShell>
       {toast && <div className="pop" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: c.ink, color: '#fff', borderRadius: 12, padding: '11px 18px', fontSize: 14, fontWeight: 600, zIndex: 60 }}>{toast}</div>}
