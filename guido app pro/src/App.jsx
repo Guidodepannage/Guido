@@ -3,7 +3,7 @@ import {
   Truck, Send, MapPin, Phone, CheckCircle2, Navigation, Flag, Bell, Radio,
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
-  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings
+  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -814,7 +814,7 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge }) {
   );
 }
 
-function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
+function AdminMissions({ missions, accounts, onAssign, onTakeCharge, stock = [] }) {
   const [filter, setFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('');
   const [periode, setPeriode] = useState('all');
@@ -850,9 +850,35 @@ function AdminMissions({ missions, accounts, onAssign, onTakeCharge }) {
   const clientChoisi = clients.find((cl) => cl.id === clientFilter);
   const datesActives = dateDebut || dateFin;
 
+  const exporter = () => {
+    const entete = ['Date', 'Client', 'Lieu', 'Immatriculation', 'Type de pneu', 'Position', 'Fourniture', 'Pneu commandé', 'Prix (€)', 'Intervenant', 'Statut'];
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lignes = shown.map((m) => {
+      const ref = m.stockId ? stock.find((s) => s.id === m.stockId) : null;
+      const fourn = m.fourniture === 'guido' ? 'Commande Guido' : (m.fourniture === 'client' ? 'Client équipé' : '');
+      const pneuCmd = m.fourniture === 'guido' ? m.type : '';
+      const prix = m.fourniture === 'guido' && ref?.prix != null ? String(ref.prix).replace('.', ',') : '';
+      return [
+        new Date(m.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        m.clientCompany, m.lieu, m.immat, m.type, m.pos, fourn, pneuCmd, prix,
+        m.assignedName || '', STATUS_META[m.status]?.label || m.status,
+      ].map(esc).join(';');
+    });
+    const csv = '\uFEFF' + [entete.map(esc).join(';'), ...lignes].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const suffixe = clientChoisi ? '-' + clientChoisi.company.replace(/[^a-z0-9]/gi, '_') : '';
+    a.href = url; a.download = `missions-guido${suffixe}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
-      <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Missions</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 16 }}>
+        <h1 style={{ margin: 0, fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Missions</h1>
+        <button onClick={exporter} disabled={shown.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 7, background: shown.length ? c.ink : c.line, color: shown.length ? '#fff' : c.muted, border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 13.5, fontWeight: 700, flexShrink: 0 }}><Download size={16} /> Exporter</button>
+      </div>
       <div style={{ marginBottom: 12 }}>
         <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}><Users size={14} color={c.muted} /> Filtrer par client</label>
         <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={fieldStyle}>
@@ -1176,7 +1202,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
       </nav>
       <main style={{ maxWidth: 960, margin: '0 auto', padding: '22px 16px 40px' }}>
         {tab === 'dashboard' ? <Dashboard accounts={accounts} missions={missions} stock={stock} goMissions={() => setTab('missions')} goAccounts={() => setTab('accounts')} goStock={() => setTab('stock')} />
-          : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} />
+          : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
