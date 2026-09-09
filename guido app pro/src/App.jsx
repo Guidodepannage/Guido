@@ -3,7 +3,7 @@ import {
   Truck, Send, MapPin, Phone, CheckCircle2, Navigation, Flag, Bell, Radio,
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
-  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download
+  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -36,6 +36,12 @@ const mapStock = (r) => ({
   createdAt: new Date(r.created_at).getTime(),
 });
 const stockBas = (s) => s.etat === 'neuf' && s.seuil != null && s.quantite <= s.seuil;
+
+const mapFacture = (r) => ({
+  id: r.id, clientId: r.client_id, numero: r.numero,
+  dateFacture: r.date_facture, path: r.fichier_path,
+  createdAt: new Date(r.created_at).getTime(),
+});
 
 /* Audio partagé — débloqué par un geste utilisateur (contrainte iOS) */
 let guidoAudioCtx = null;
@@ -604,9 +610,15 @@ function AdminContact({ contact, onSave }) {
   );
 }
 
-function FieldShell({ user, children, onLogout, contact }) {
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
+  const isClient = user.type === 'client';
+  const navItems = [
+    { k: 'main', label: 'Accueil', Icon: LayoutDashboard },
+    ...(isClient ? [{ k: 'factures', label: 'Factures', Icon: FileText }] : []),
+    { k: 'contact', label: 'Contact', Icon: Mail },
+  ];
   return (
     <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: 452, minHeight: '100dvh', background: c.paper, display: 'flex', flexDirection: 'column', boxShadow: '0 0 44px rgba(0,0,0,0.25)' }}>
@@ -623,9 +635,9 @@ function FieldShell({ user, children, onLogout, contact }) {
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
-          {[{ k: 'main', label: 'Accueil', Icon: LayoutDashboard }, { k: 'contact', label: 'Contact', Icon: Mail }].map((t) => {
+          {navItems.map((t) => {
             const on = view === t.k;
             return (
               <button key={t.k} onClick={() => setView(t.k)} style={{ flex: 1, border: 'none', background: 'transparent', color: on ? c.amberDark : c.muted, padding: '10px 4px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, fontSize: 11.5, fontWeight: 700 }}>
@@ -1174,7 +1186,110 @@ function StockView({ stock, onCreate, onUpdate, onDelete, onAdjust }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline }) {
+/* ================================================================== */
+/*  FACTURES                                                          */
+/* ================================================================== */
+function FacturesAdmin({ factures, accounts, onUpload, onDelete, onOpen }) {
+  const clients = accounts.filter((a) => a.type === 'client').sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+  const [clientId, setClientId] = useState('');
+  const [numero, setNumero] = useState('');
+  const [dateF, setDateF] = useState(new Date().toISOString().slice(0, 10));
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [filtreClient, setFiltreClient] = useState('');
+  const valid = clientId && numero.trim() && dateF && file;
+
+  const submit = async () => {
+    setBusy(true); setErr('');
+    const res = await onUpload({ clientId, numero: numero.trim(), dateF, file });
+    setBusy(false);
+    if (res?.error) { setErr(res.error); return; }
+    setNumero(''); setFile(null); setClientId('');
+    const input = document.getElementById('facture-file'); if (input) input.value = '';
+  };
+
+  const liste = factures
+    .filter((f) => !filtreClient || f.clientId === filtreClient)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const nomClient = (id) => { const c2 = clients.find((x) => x.id === id); return c2 ? c2.company : '—'; };
+
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Factures</h1>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 22 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Déposer une facture</div>
+        <div><label style={labelStyle}>Client</label>
+          <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={fieldStyle}>
+            <option value="">Choisir un client…</option>
+            {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.company} — {cl.name}</option>)}
+          </select></div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ flex: 1 }}><label style={labelStyle}>N° de facture</label><input style={fieldStyle} value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex. 2026-042" /></div>
+          <div style={{ flex: 1 }}><label style={labelStyle}>Date</label><input type="date" style={fieldStyle} value={dateF} onChange={(e) => setDateF(e.target.value)} /></div>
+        </div>
+        <div><label style={labelStyle}>Fichier PDF</label>
+          <input id="facture-file" type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ ...fieldStyle, padding: '9px 10px' }} /></div>
+        {err && <div style={{ color: c.red, fontSize: 13 }}>{err}</div>}
+        <button onClick={submit} disabled={!valid || busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><FileText size={17} /> {busy ? 'Dépôt en cours…' : 'Déposer la facture'}</button>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}><Users size={14} color={c.muted} /> Filtrer par client</label>
+        <select value={filtreClient} onChange={(e) => setFiltreClient(e.target.value)} style={fieldStyle}>
+          <option value="">Tous les clients</option>
+          {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.company}</option>)}
+        </select>
+      </div>
+      {liste.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0' }}>Aucune facture déposée.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {liste.map((f) => (
+            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '12px 14px' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: c.redSoft, color: c.red, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={19} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Facture {f.numero}</div>
+                <div style={{ fontSize: 12.5, color: c.muted }}>{nomClient(f.clientId)} · {new Date(f.dateFacture).toLocaleDateString('fr-FR')}</div>
+              </div>
+              <button onClick={() => onOpen(f)} aria-label="Ouvrir" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.ink, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700 }}><Eye size={15} /> Voir</button>
+              <button onClick={() => onDelete(f)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center' }}><Trash2 size={15} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FacturesClient({ factures, onOpen }) {
+  const liste = [...factures].sort((a, b) => b.createdAt - a.createdAt);
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Mes factures</h1>
+      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Retrouvez et téléchargez vos factures Guido.</p>
+      {liste.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 0', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune facture disponible pour le moment.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {liste.map((f) => (
+            <button key={f.id} onClick={() => onOpen(f)} style={{ display: 'flex', alignItems: 'center', gap: 13, textAlign: 'left', background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 11, background: c.redSoft, color: c.red, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={21} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15.5, fontWeight: 700, color: c.ink }}>Facture {f.numero}</div>
+                <div style={{ fontSize: 12.5, color: c.muted }}>{new Date(f.dateFacture).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+              </div>
+              <Download size={18} color={c.amber} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1186,6 +1301,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
     { k: 'missions', label: 'Missions', Icon: ClipboardList, badge: aAssigner },
     { k: 'interventions', label: 'Mes interventions', Icon: Flag, badge: mesInterventions },
     { k: 'stock', label: 'Stock', Icon: Package, badge: aRecommander },
+    { k: 'factures', label: 'Factures', Icon: FileText },
     { k: 'contact', label: 'Contact', Icon: Mail },
     { k: 'accounts', label: 'Comptes', Icon: Users },
   ];
@@ -1217,6 +1333,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
+          : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} />}
       </main>
@@ -1239,6 +1356,7 @@ export default function App() {
   const [stock, setStock] = useState([]);
   const [clientStock, setClientStock] = useState([]);
   const [contact, setContact] = useState(null);
+  const [factures, setFactures] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -1357,6 +1475,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Factures (admin : toutes ; client : les siennes via RLS) */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('factures').select('*').order('created_at', { ascending: false });
+      if (active && data) setFactures(data.map(mapFacture));
+    };
+    load();
+    const ch = supabase.channel('factures-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'factures' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -1434,6 +1567,31 @@ export default function App() {
     flash('Coordonnées mises à jour');
   };
 
+  const factureUpload = async ({ clientId, numero, dateF, file }) => {
+    try {
+      if (file.type !== 'application/pdf') return { error: 'Le fichier doit être un PDF.' };
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${clientId}/${Date.now()}-${safe}`;
+      const { error: upErr } = await supabase.storage.from('factures').upload(path, file, { contentType: 'application/pdf' });
+      if (upErr) return { error: upErr.message };
+      const { error: insErr } = await supabase.from('factures').insert({ client_id: clientId, numero, date_facture: dateF, fichier_path: path });
+      if (insErr) { await supabase.storage.from('factures').remove([path]); return { error: insErr.message }; }
+      flash('Facture déposée');
+      return { ok: true };
+    } catch (e) { return { error: String(e) }; }
+  };
+  const factureDelete = async (f) => {
+    if (!window.confirm(`Supprimer la facture ${f.numero} ? Cette action est définitive.`)) return;
+    await supabase.storage.from('factures').remove([f.path]);
+    await supabase.from('factures').delete().eq('id', f.id);
+    flash('Facture supprimée');
+  };
+  const factureOpen = async (f) => {
+    const { data, error } = await supabase.storage.from('factures').createSignedUrl(f.path, 120);
+    if (error || !data?.signedUrl) { flash('Impossible d\'ouvrir la facture'); return; }
+    window.open(data.signedUrl, '_blank');
+  };
+
   const enableAlerts = async () => {
     unlockAudio();
     const r = await activerNotifications(profile.id);
@@ -1462,7 +1620,8 @@ export default function App() {
       onCreate={createAccount} onCopy={copy} onStatus={setStatus} onDelete={removeAccount} onAssign={assign} onLogout={logout} toast={toast}
       onEnableAlerts={enableAlerts} alertsState={alertsState}
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
-      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} onDecline={decline} />
+      clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} onDecline={decline}
+      factures={factures} onFactureUpload={factureUpload} onFactureDelete={factureDelete} onFactureOpen={factureOpen} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -1477,7 +1636,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
