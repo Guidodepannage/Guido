@@ -26,6 +26,7 @@ const mapMission = (r) => ({
 const mapAccount = (p) => ({
   id: p.id, type: p.role, name: p.name, company: p.company,
   phone: p.phone, email: p.email, zone: p.zone, status: p.status,
+  prenom: p.prenom, siret: p.siret, adresse: p.adresse,
   createdAt: new Date(p.created_at).getTime(),
 });
 
@@ -66,10 +67,18 @@ function unlockAudio() {
 /*  LOGIN (e-mail + mot de passe, pour tous les rôles)                */
 /* ================================================================== */
 function Login() {
+  const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'sent'
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Champs d'inscription
+  const [name, setName] = useState('');
+  const [prenom, setPrenom] = useState('');
+  const [company, setCompany] = useState('');
+  const [phone, setPhone] = useState('');
+  const [siret, setSiret] = useState('');
+  const [adresse, setAdresse] = useState('');
 
   const submit = async () => {
     setErr(''); setBusy(true);
@@ -78,24 +87,78 @@ function Login() {
     if (error) setErr('E-mail ou mot de passe incorrect.');
   };
 
-  return (
+  const validSignup = name.trim() && prenom.trim() && company.trim() && email.trim() && pass.length >= 6;
+  const signup = async () => {
+    setErr(''); setBusy(true);
+    const { data, error } = await supabase.functions.invoke('inscription-client', {
+      body: { name: name.trim(), prenom: prenom.trim(), company: company.trim(), email: email.trim(), phone: phone.trim(), siret: siret.trim(), adresse: adresse.trim(), password: pass },
+    });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    if (data?.error) { setErr(data.error); return; }
+    setMode('sent');
+  };
+
+  const shell = (inner) => (
     <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 24, justifyContent: 'center' }}>
           <img src="/logo-emblem.png" alt="Guido" style={{ width: 42, height: 42, objectFit: 'contain' }} />
           <div><div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>Guido</div><div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 3 }}>Dépannage poids lourd</div></div>
         </div>
-        <div style={{ background: c.surface, borderRadius: 18, padding: 22 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}><KeyRound size={18} color={c.amber} /><span style={{ fontSize: 15, fontWeight: 700, color: c.ink }}>Connexion</span></div>
-          <div style={{ marginBottom: 13 }}><label style={labelStyle}>Adresse e-mail</label>
-            <input style={fieldStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@societe.fr" onKeyDown={(e) => e.key === 'Enter' && submit()} /></div>
-          <label style={labelStyle}>Mot de passe</label>
-          <input type="password" style={fieldStyle} value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••" onKeyDown={(e) => e.key === 'Enter' && submit()} />
-          {err && <div style={{ color: c.red, fontSize: 13, marginTop: 8 }}>{err}</div>}
-          <button onClick={submit} disabled={busy} style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
-            {busy ? 'Connexion…' : 'Se connecter'}
-          </button>
+        <div style={{ background: c.surface, borderRadius: 18, padding: 22 }}>{inner}</div>
+      </div>
+    </div>
+  );
+
+  if (mode === 'sent') {
+    return shell(
+      <div style={{ textAlign: 'center', padding: '10px 4px' }}>
+        <div style={{ width: 54, height: 54, borderRadius: 16, background: c.greenSoft, color: c.green, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}><CheckCircle2 size={30} /></div>
+        <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: c.ink }}>Demande envoyée</h2>
+        <p style={{ margin: '0 0 20px', fontSize: 14, color: c.muted, lineHeight: 1.5 }}>Votre compte a bien été créé. Il sera actif dès que Guido aura validé votre inscription. Vous pourrez alors vous connecter.</p>
+        <button onClick={() => { setMode('login'); setErr(''); }} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 15, fontWeight: 800 }}>Retour à la connexion</button>
+      </div>
+    );
+  }
+
+  if (mode === 'signup') {
+    return shell(
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}><UserPlus size={18} color={c.amber} /><span style={{ fontSize: 15, fontWeight: 700, color: c.ink }}>Créer un compte client</span></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}><label style={labelStyle}>Prénom</label><input style={fieldStyle} value={prenom} onChange={(e) => setPrenom(e.target.value)} /></div>
+            <div style={{ flex: 1 }}><label style={labelStyle}>Nom</label><input style={fieldStyle} value={name} onChange={(e) => setName(e.target.value)} /></div>
+          </div>
+          <div><label style={labelStyle}>Société</label><input style={fieldStyle} value={company} onChange={(e) => setCompany(e.target.value)} /></div>
+          <div><label style={labelStyle}>E-mail</label><input style={fieldStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@societe.fr" /></div>
+          <div><label style={labelStyle}>Téléphone</label><input type="tel" style={fieldStyle} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
+          <div><label style={labelStyle}>SIRET</label><input style={fieldStyle} value={siret} onChange={(e) => setSiret(e.target.value)} placeholder="14 chiffres" /></div>
+          <div><label style={labelStyle}>Adresse postale</label><input style={fieldStyle} value={adresse} onChange={(e) => setAdresse(e.target.value)} /></div>
+          <div><label style={labelStyle}>Mot de passe</label><input type="password" style={fieldStyle} value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Au moins 6 caractères" /></div>
+          {err && <div style={{ color: c.red, fontSize: 13 }}>{err}</div>}
+          <button onClick={signup} disabled={!validSignup || busy} style={{ marginTop: 2, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: validSignup && !busy ? c.amber : c.line, color: validSignup && !busy ? '#fff' : c.muted, fontSize: 15, fontWeight: 800 }}>{busy ? 'Création…' : 'Créer mon compte'}</button>
+          <button onClick={() => { setMode('login'); setErr(''); }} style={{ border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 600 }}>← J'ai déjà un compte</button>
         </div>
+      </div>
+    );
+  }
+
+  return shell(
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}><KeyRound size={18} color={c.amber} /><span style={{ fontSize: 15, fontWeight: 700, color: c.ink }}>Connexion</span></div>
+      <div style={{ marginBottom: 13 }}><label style={labelStyle}>Adresse e-mail</label>
+        <input style={fieldStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@societe.fr" onKeyDown={(e) => e.key === 'Enter' && submit()} /></div>
+      <label style={labelStyle}>Mot de passe</label>
+      <input type="password" style={fieldStyle} value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••" onKeyDown={(e) => e.key === 'Enter' && submit()} />
+      {err && <div style={{ color: c.red, fontSize: 13, marginTop: 8 }}>{err}</div>}
+      <button onClick={submit} disabled={busy} style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
+        {busy ? 'Connexion…' : 'Se connecter'}
+      </button>
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${c.line}`, textAlign: 'center' }}>
+        <span style={{ fontSize: 13.5, color: c.muted }}>Pas encore client ? </span>
+        <button onClick={() => { setMode('signup'); setErr(''); }} style={{ border: 'none', background: 'transparent', color: c.amberDark, fontSize: 13.5, fontWeight: 800 }}>Créer un compte</button>
       </div>
     </div>
   );
@@ -709,6 +772,14 @@ function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus,
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}><Badge meta={STATUS_META[a.status]} dot /><Badge meta={TYPE_META[a.type]} /></div>
       </div>
+      {a.status === 'invite' && a.type === 'client' && (a.siret || a.adresse || a.phone) && (
+        <div style={{ borderTop: `1px solid ${c.line}`, padding: '10px 15px', background: c.paper, fontSize: 12.5, color: c.muted, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {(a.prenom || a.name) && <div>Contact : <b style={{ color: c.ink }}>{[a.prenom, a.name].filter(Boolean).join(' ')}</b></div>}
+          {a.phone && <div>Tél : <span className="num" style={{ color: c.ink }}>{a.phone}</span></div>}
+          {a.siret && <div>SIRET : <span className="num" style={{ color: c.ink }}>{a.siret}</span></div>}
+          {a.adresse && <div>Adresse : <span style={{ color: c.ink }}>{a.adresse}</span></div>}
+        </div>
+      )}
       {inviteLink && (
         <div className="pop" style={{ borderTop: `1px solid ${c.line}`, padding: '11px 15px', background: c.paper }}>
           <div style={{ fontSize: 11.5, color: c.muted, marginBottom: 6, fontWeight: 700 }}>LIEN D'INVITATION (à envoyer à la personne)</div>
@@ -1611,6 +1682,14 @@ export default function App() {
   if (profile.status === 'suspendu') {
     return <><GlobalStyle /><div style={{ minHeight: '100dvh', background: c.asphalt, color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24, textAlign: 'center' }}>
       <ShieldCheck size={40} color={c.amber} /><div style={{ fontSize: 16 }}>Votre compte est suspendu. Contactez Guido.</div>
+      <button onClick={logout} style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 600 }}>Se déconnecter</button>
+    </div></>;
+  }
+  if (profile.status === 'invite') {
+    return <><GlobalStyle /><div style={{ minHeight: '100dvh', background: c.asphalt, color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24, textAlign: 'center' }}>
+      <Clock size={40} color={c.amber} />
+      <div style={{ fontSize: 17, fontWeight: 700 }}>Compte en attente de validation</div>
+      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', maxWidth: 300, lineHeight: 1.5 }}>Votre inscription a bien été reçue. Vous pourrez accéder à Guido dès qu'elle aura été validée.</div>
       <button onClick={logout} style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontWeight: 600 }}>Se déconnecter</button>
     </div></>;
   }
