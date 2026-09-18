@@ -22,6 +22,7 @@ const mapMission = (r) => ({
   clientId: r.client_id, clientCompany: r.client_company,
   fourniture: r.fourniture,
   stockId: r.stock_id,
+  champs: r.champs_perso || null,
 });
 const mapAccount = (p) => ({
   id: p.id, type: p.role, name: p.name, company: p.company,
@@ -261,7 +262,7 @@ function MissionDetail({ m, client }) {
   );
 }
 
-function ClientView({ missions, onSend, stock = [], onEnableAlerts, alertsState }) {
+function ClientView({ missions, onSend, stock = [], onEnableAlerts, alertsState, champs = [] }) {
   const [lieu, setLieu] = useState('');
   const [immat, setImmat] = useState('');
   const [type, setType] = useState('');
@@ -277,6 +278,10 @@ function ClientView({ missions, onSend, stock = [], onEnableAlerts, alertsState 
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('new');
+  const [reponses, setReponses] = useState({});
+
+  const setRep = (id, val) => setReponses((r) => ({ ...r, [id]: val }));
+  const champsOk = (champs || []).every((ch) => !ch.obligatoire || (reponses[ch.id] != null && String(reponses[ch.id]).trim() !== ''));
 
   const offres = (stock || []).filter((s) => (s.quantite || 0) > 0);
   const dimensions = [...new Set(offres.map((o) => o.dimension))].sort();
@@ -289,14 +294,18 @@ function ClientView({ missions, onSend, stock = [], onEnableAlerts, alertsState 
     ? (chosenOffre ? `${chosenOffre.dimension}${chosenOffre.marque ? ' ' + chosenOffre.marque : ''}` : '')
     : type.trim();
   const pneuOk = fourniture === 'guido' ? !!offreId : !!type.trim();
-  const valid = lieu.trim() && immat.trim() && tel.trim() && element && cote && essieu && (!needInout || inout) && fourniture && pneuOk;
+  const valid = lieu.trim() && immat.trim() && tel.trim() && element && cote && essieu && (!needInout || inout) && fourniture && pneuOk && champsOk;
 
   const send = async () => {
     setBusy(true);
-    const ok = await onSend({ lieu: lieu.trim(), immat: immat.trim().toUpperCase(), type: typeFinal, pos, tel: tel.trim(), message: message.trim(), fourniture, stockId: fourniture === 'guido' ? offreId : null });
+    // Construire les réponses lisibles (libellé -> valeur) pour l'admin
+    const champsPerso = (champs || [])
+      .map((ch) => ({ label: ch.label, valeur: reponses[ch.id] ?? '' }))
+      .filter((x) => String(x.valeur).trim() !== '');
+    const ok = await onSend({ lieu: lieu.trim(), immat: immat.trim().toUpperCase(), type: typeFinal, pos, tel: tel.trim(), message: message.trim(), fourniture, stockId: fourniture === 'guido' ? offreId : null, champsPerso: champsPerso.length ? champsPerso : null });
     setBusy(false);
     if (ok) {
-      setLieu(''); setImmat(''); setType(''); setTel(''); setElement(''); setCote(''); setEssieu(null); setInout(''); setMessage(''); setFourniture(''); setDim(''); setOffreId('');
+      setLieu(''); setImmat(''); setType(''); setTel(''); setElement(''); setCote(''); setEssieu(null); setInout(''); setMessage(''); setFourniture(''); setDim(''); setOffreId(''); setReponses({});
       setSent(true); setTimeout(() => setSent(false), 2600);
     }
   };
@@ -404,6 +413,24 @@ function ClientView({ missions, onSend, stock = [], onEnableAlerts, alertsState 
 
             <div><label style={labelStyle}>Téléphone du chauffeur</label>
               <input type="tel" inputMode="tel" style={fieldStyle} value={tel} onChange={(e) => setTel(e.target.value)} placeholder="06 12 34 56 78" /></div>
+
+            {(champs || []).map((ch) => (
+              <div key={ch.id}>
+                <label style={labelStyle}>{ch.label}{ch.obligatoire ? '' : ' (optionnel)'}</label>
+                {ch.type === 'liste' ? (
+                  <select style={fieldStyle} value={reponses[ch.id] || ''} onChange={(e) => setRep(ch.id, e.target.value)}>
+                    <option value="">Choisir…</option>
+                    {(ch.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : ch.type === 'oui_non' ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {['Oui', 'Non'].map((o) => { const on = reponses[ch.id] === o; return <button key={o} type="button" onClick={() => setRep(ch.id, o)} style={{ flex: 1, padding: '11px', borderRadius: 10, fontSize: 14, fontWeight: 700, border: `1.5px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.ink }}>{o}</button>; })}
+                  </div>
+                ) : (
+                  <input style={fieldStyle} value={reponses[ch.id] || ''} onChange={(e) => setRep(ch.id, e.target.value)} placeholder={ch.label} />
+                )}
+              </div>
+            ))}
 
             <div><label style={labelStyle}>Message / spécificité (optionnel)</label>
               <textarea rows={3} style={{ ...fieldStyle, resize: 'vertical', minHeight: 74, lineHeight: 1.5 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Ex. Camion en sous-sol, accès poids lourd difficile, pneu déjà démonté…" /></div>
@@ -759,7 +786,81 @@ function PneusModal({ client, stock, authorizedIds, onToggle, onClose }) {
   );
 }
 
-function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus, onRegenLink }) {
+function ChampsModal({ client, champs, onSave, onClose }) {
+  const [liste, setListe] = useState(champs && champs.length ? champs : []);
+  const [busy, setBusy] = useState(false);
+  // Nouveau champ en cours de création
+  const [label, setLabel] = useState('');
+  const [ftype, setFtype] = useState('texte');
+  const [oblig, setOblig] = useState(false);
+  const [optionsTxt, setOptionsTxt] = useState('');
+
+  const ajouter = () => {
+    if (!label.trim()) return;
+    const champ = {
+      id: 'c' + Date.now(),
+      label: label.trim(),
+      type: ftype,
+      obligatoire: oblig,
+      options: ftype === 'liste' ? optionsTxt.split(',').map((o) => o.trim()).filter(Boolean) : [],
+    };
+    if (ftype === 'liste' && champ.options.length === 0) return;
+    setListe([...liste, champ]);
+    setLabel(''); setFtype('texte'); setOblig(false); setOptionsTxt('');
+  };
+  const retirer = (id) => setListe(liste.filter((c2) => c2.id !== id));
+  const enregistrer = async () => { setBusy(true); await onSave(client.id, liste); setBusy(false); onClose(); };
+
+  const typeLabel = { texte: 'Texte libre', liste: 'Liste de choix', oui_non: 'Oui / Non' };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 50 }}>
+      <div className="pop" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: c.surface, borderRadius: 18, padding: 22, maxHeight: '90dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><ClipboardList size={19} color={c.amber} /><h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: c.ink }}>Champs personnalisés</h2></div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: 'transparent', color: c.muted }}><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 13, color: c.muted, marginBottom: 16 }}>Champs supplémentaires affichés dans le formulaire de <b style={{ color: c.ink }}>{client.company}</b>.</div>
+
+        {liste.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+            {liste.map((ch) => (
+              <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: c.paper, borderRadius: 11, padding: '10px 12px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{ch.label}{ch.obligatoire && <span style={{ color: c.red }}> *</span>}</div>
+                  <div style={{ fontSize: 12, color: c.muted }}>{typeLabel[ch.type]}{ch.type === 'liste' && ch.options?.length ? ` : ${ch.options.join(', ')}` : ''}</div>
+                </div>
+                <button onClick={() => retirer(ch.id)} aria-label="Retirer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '7px 9px' }}><Trash2 size={15} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ background: c.paper, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: c.ink, marginBottom: 11 }}>Ajouter un champ</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+            <div><label style={labelStyle}>Libellé du champ</label><input style={fieldStyle} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex. N° de commande" /></div>
+            <div><label style={labelStyle}>Type</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[{ k: 'texte', l: 'Texte' }, { k: 'liste', l: 'Liste' }, { k: 'oui_non', l: 'Oui/Non' }].map((t) => { const on = ftype === t.k; return <button key={t.k} onClick={() => setFtype(t.k)} style={{ flex: 1, padding: '9px', borderRadius: 9, fontSize: 13, fontWeight: 700, border: `1.5px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.ink }}>{t.l}</button>; })}
+              </div></div>
+            {ftype === 'liste' && (
+              <div><label style={labelStyle}>Options (séparées par une virgule)</label><input style={fieldStyle} value={optionsTxt} onChange={(e) => setOptionsTxt(e.target.value)} placeholder="Ex. Tracteur, Porteur, Remorque" /></div>
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, color: c.ink, cursor: 'pointer' }}>
+              <input type="checkbox" checked={oblig} onChange={(e) => setOblig(e.target.checked)} style={{ width: 17, height: 17, accentColor: c.amber }} /> Champ obligatoire
+            </label>
+            <button onClick={ajouter} disabled={!label.trim()} style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: label.trim() ? c.amber : c.line, color: label.trim() ? '#fff' : c.muted, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><Plus size={16} /> Ajouter ce champ</button>
+          </div>
+        </div>
+
+        <button onClick={enregistrer} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.ink, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800 }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+      </div>
+    </div>
+  );
+}
+
+function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus, onRegenLink, onManageChamps, nbChamps }) {
   const [regen, setRegen] = useState(false);
   const doRegen = async () => { setRegen(true); await onRegenLink(a); setRegen(false); };
   return (
@@ -797,6 +898,11 @@ function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus,
       {a.type === 'client' && (
         <button onClick={() => onManagePneus(a)} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: c.paper, color: c.blue, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
           <Package size={16} /> Pneus autorisés{nbPneus ? ` (${nbPneus})` : ''}
+        </button>
+      )}
+      {a.type === 'client' && (
+        <button onClick={() => onManageChamps(a)} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: c.paper, color: c.amberDark, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+          <ClipboardList size={16} /> Champs du formulaire{nbChamps ? ` (${nbChamps})` : ''}
         </button>
       )}
       <div style={{ borderTop: `1px solid ${c.line}`, display: 'flex' }}>
@@ -880,6 +986,11 @@ function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge, onDecline }
       <div style={{ fontSize: 12.5, color: c.muted, marginBottom: 2 }}>Client : <b style={{ color: c.ink }}>{m.clientCompany}</b> · <span className="num">{timeAgo(m.createdAt)}</span></div>
       <div style={{ fontSize: 12.5, color: c.muted }}>{m.type} · {m.pos} · chauffeur <span className="num">{m.tel}</span></div>
       {m.fourniture && <div style={{ marginTop: 8 }}><FournitureTag v={m.fourniture} /></div>}
+      {Array.isArray(m.champs) && m.champs.length > 0 && (
+        <div style={{ marginTop: 10, background: c.paper, borderRadius: 10, padding: '9px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {m.champs.map((ch, i) => <div key={i} style={{ fontSize: 12.5, color: c.muted }}>{ch.label} : <b style={{ color: c.ink }}>{ch.valeur}</b></div>)}
+        </div>
+      )}
       {canAssign ? (
         <div style={{ marginTop: 12 }}>
           {m.status === 'assignee' && <div style={{ fontSize: 12.5, color: c.blue, marginBottom: 7 }}>Assignée à <b>{m.assignedName}</b> · en attente de validation</div>}
@@ -1068,9 +1179,10 @@ function MyInterventions({ missions, profileId, onAdvance }) {
   );
 }
 
-function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth, onRegenLink }) {
+function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth, onRegenLink, champsConfig = {}, onSaveChamps }) {
   const [filter, setFilter] = useState('all'); const [q, setQ] = useState('');
   const [pneusClient, setPneusClient] = useState(null);
+  const [champsClient, setChampsClient] = useState(null);
   const authIdsFor = (id) => clientStock.filter((r) => r.client_id === id).map((r) => r.stock_id);
   const filters = [{ k: 'all', label: 'Tous' }, { k: 'client', label: 'Clients' }, { k: 'prestataire', label: 'Prestataires' }, { k: 'invite', label: 'Invités' }];
   const shown = accounts.filter((a) => {
@@ -1094,7 +1206,7 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, s
       </div>
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0' }}>Aucun compte.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} onRegenLink={onRegenLink} />)}
+        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} onRegenLink={onRegenLink} onManageChamps={setChampsClient} nbChamps={a.type === 'client' ? (champsConfig[a.id]?.length || 0) : 0} />)}
       </div>
       {pneusClient && (
         <PneusModal
@@ -1103,6 +1215,14 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, s
           authorizedIds={authIdsFor(pneusClient.id)}
           onToggle={onToggleAuth}
           onClose={() => setPneusClient(null)}
+        />
+      )}
+      {champsClient && (
+        <ChampsModal
+          client={champsClient}
+          champs={champsConfig[champsClient.id] || []}
+          onSave={onSaveChamps}
+          onClose={() => setChampsClient(null)}
         />
       )}
     </div>
@@ -1360,7 +1480,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1406,7 +1526,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
-          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} />}
+          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
       {pwd && <PasswordModal onClose={() => setPwd(false)} />}
@@ -1428,6 +1548,7 @@ export default function App() {
   const [clientStock, setClientStock] = useState([]);
   const [contact, setContact] = useState(null);
   const [factures, setFactures] = useState([]);
+  const [champsConfig, setChampsConfig] = useState({});
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -1561,6 +1682,25 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Champs personnalisés par client */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('client_champs').select('*');
+      if (active && data) {
+        const map = {};
+        data.forEach((r) => { map[r.client_id] = r.champs || []; });
+        setChampsConfig(map);
+      }
+    };
+    load();
+    const ch = supabase.channel('champs-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_champs' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -1571,6 +1711,7 @@ export default function App() {
       tel_chauffeur: p.tel, message: p.message || null, status: 'envoyee',
       fourniture: p.fourniture || null,
       stock_id: p.stockId || null,
+      champs_perso: p.champsPerso || null,
     });
     if (error) { flash('Erreur : ' + error.message); return false; }
     return true;
@@ -1662,6 +1803,10 @@ export default function App() {
     if (error || !data?.signedUrl) { flash('Impossible d\'ouvrir la facture'); return; }
     window.open(data.signedUrl, '_blank');
   };
+  const saveChamps = async (clientId, champs) => {
+    await supabase.from('client_champs').upsert({ client_id: clientId, champs }, { onConflict: 'client_id' });
+    flash('Champs enregistrés');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -1700,7 +1845,8 @@ export default function App() {
       onEnableAlerts={enableAlerts} alertsState={alertsState}
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
       clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} onDecline={decline}
-      factures={factures} onFactureUpload={factureUpload} onFactureDelete={factureDelete} onFactureOpen={factureOpen} />
+      factures={factures} onFactureUpload={factureUpload} onFactureDelete={factureDelete} onFactureOpen={factureOpen}
+      champsConfig={champsConfig} onSaveChamps={saveChamps} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -1717,7 +1863,7 @@ export default function App() {
       <GlobalStyle />
       <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen}>
         {profile.type === 'client'
-          ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} />
+          ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
       </FieldShell>
       {toast && <div className="pop" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: c.ink, color: '#fff', borderRadius: 12, padding: '11px 18px', fontSize: 14, fontWeight: 600, zIndex: 60 }}>{toast}</div>}
