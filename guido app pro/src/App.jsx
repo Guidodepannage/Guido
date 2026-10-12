@@ -703,6 +703,56 @@ function AdminContact({ contact, onSave }) {
 const VEHIC_TYPES = ['Tracteur', 'Porteur', 'Remorque', 'Semi-remorque'];
 const mapVehicule = (r) => ({ id: r.id, clientId: r.client_id, immat: r.immat, vtype: r.vtype, createdAt: new Date(r.created_at).getTime() });
 
+/* Icônes silhouettes par type de véhicule (dessinées pour le poids lourd) */
+function VehiculeIcon({ type, size = 22, color = '#fff' }) {
+  const s = { width: size, height: size, display: 'block' };
+  const w = { fill: 'none', stroke: color, strokeWidth: 2, strokeLinejoin: 'round', strokeLinecap: 'round' };
+  const roue = (cx) => <circle cx={cx} cy="18.5" r="2.3" fill={color} stroke="none" />;
+  if (type === 'Tracteur') {
+    // Cabine tractrice seule (camion court, sellette)
+    return (
+      <svg viewBox="0 0 32 24" style={s} xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 16 V8 a2 2 0 0 1 2-2 h9 l4 4 v6" {...w} />
+        <path d="M19 10 h5 l3 3 v3 h-8" {...w} />
+        <path d="M4 16 h23" {...w} />
+        {roue(9)}{roue(23)}
+      </svg>
+    );
+  }
+  if (type === 'Porteur') {
+    // Camion porteur (cabine + caisse sur le même châssis)
+    return (
+      <svg viewBox="0 0 32 24" style={s} xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 16 V7 a1 1 0 0 1 1-1 h15 v10" {...w} />
+        <path d="M19 9 h6 l4 3 v4 h-10" {...w} />
+        <path d="M3 16 h26" {...w} />
+        {roue(8)}{roue(24)}
+      </svg>
+    );
+  }
+  if (type === 'Remorque') {
+    // Remorque (caisse sur roues, timon à l'avant)
+    return (
+      <svg viewBox="0 0 32 24" style={s} xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 13 h3" {...w} />
+        <rect x="5" y="5" width="23" height="11" rx="1" {...w} />
+        {roue(12)}{roue(21)}
+        <path d="M5 16 h23" {...w} />
+      </svg>
+    );
+  }
+  // Semi-remorque (tracteur + grande remorque attelée)
+  return (
+    <svg viewBox="0 0 34 24" style={s} xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 15 V9 a1 1 0 0 1 1-1 h5 l3 3 v4" {...w} />
+      <rect x="13" y="4" width="19" height="12" rx="1" {...w} />
+      <path d="M11 13 h2" {...w} />
+      {roue(5)}{roue(18)}{roue(27)}
+      <path d="M2 15 h8 M13 16 h17" {...w} />
+    </svg>
+  );
+}
+
 function ParcClient({ vehicules = [] }) {
   const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   return (
@@ -718,7 +768,7 @@ function ParcClient({ vehicules = [] }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {liste.map((v) => (
             <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px' }}>
-              <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Truck size={21} /></div>
+              <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={26} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Plate value={v.immat} />
                 <div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}</div>
@@ -788,7 +838,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, onAdd, onDelete }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   {liste.map((v) => (
                     <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '12px 14px' }}>
-                      <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Truck size={19} /></div>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
                       <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}</div></div>
                       <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center' }}><Trash2 size={15} /></button>
                     </div>
