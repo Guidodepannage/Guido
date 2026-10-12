@@ -1095,13 +1095,19 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], onAdd, onDele
                 <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0' }}>Aucun véhicule pour ce client.</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                  {liste.map((v) => (
-                    <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '12px 14px' }}>
-                      <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
-                      <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}</div></div>
-                      <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center' }}><Trash2 size={15} /></button>
-                    </div>
-                  ))}
+                  {liste.map((v) => {
+                    const np = pneus.filter((p) => p.vehiculeId === v.id).length;
+                    return (
+                      <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '8px 10px 8px 14px' }}>
+                        <button onClick={() => setSelVeh(v.id)} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 13, border: 'none', background: 'transparent', textAlign: 'left', padding: '4px 0' }}>
+                          <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
+                          <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div></div>
+                          <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+                        </button>
+                        <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Trash2 size={15} /></button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </>
