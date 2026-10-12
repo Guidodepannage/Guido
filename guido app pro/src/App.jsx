@@ -3,7 +3,8 @@ import {
   Truck, Send, MapPin, Phone, CheckCircle2, Navigation, Flag, Bell, Radio,
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
-  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText
+  Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
+  ArrowLeft, ChevronRight, CircleDot, Gauge
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -701,7 +702,34 @@ function AdminContact({ contact, onSave }) {
 }
 
 const VEHIC_TYPES = ['Tracteur', 'Porteur', 'Remorque', 'Semi-remorque'];
-const mapVehicule = (r) => ({ id: r.id, clientId: r.client_id, immat: r.immat, vtype: r.vtype, createdAt: new Date(r.created_at).getTime() });
+const mapVehicule = (r) => ({ id: r.id, clientId: r.client_id, immat: r.immat, vtype: r.vtype, essieux: Array.isArray(r.essieux) ? r.essieux : null, createdAt: new Date(r.created_at).getTime() });
+
+/* ---- Pneus par véhicule (suivi de parc) ---- */
+const mapPneu = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, essieu: r.essieu, pos: r.pos, marque: r.marque, dimension: r.dimension, profondeur: r.profondeur, etat: r.etat, nature: r.nature });
+
+/* Disposition d'essieux par défaut selon le type (modifiable ensuite) */
+const ESSIEUX_DEFAUT = {
+  'Tracteur': ['simple', 'jumele'],
+  'Porteur': ['simple', 'jumele'],
+  'Remorque': ['simple', 'simple'],
+  'Semi-remorque': ['simple', 'simple', 'simple'],
+};
+const essieuxDe = (v) => (v.essieux && v.essieux.length ? v.essieux : (ESSIEUX_DEFAUT[v.vtype] || ['simple', 'jumele']));
+/* Emplacements (codes + libellés courts) pour un type d'essieu */
+const POS_SIMPLE = [{ code: 'G', lib: 'Gauche' }, { code: 'D', lib: 'Droite' }];
+const POS_JUMELE = [{ code: 'GE', lib: 'G. ext.' }, { code: 'GI', lib: 'G. int.' }, { code: 'DI', lib: 'D. int.' }, { code: 'DE', lib: 'D. ext.' }];
+const posDe = (type) => (type === 'jumele' ? POS_JUMELE : POS_SIMPLE);
+
+const ETAT_PNEU = {
+  neuf:       { label: 'Neuf',          bg: c.greenSoft, fg: c.green,    dot: c.green },
+  bon:        { label: 'Bon',           bg: c.blueSoft,  fg: c.blue,     dot: c.blue },
+  surveiller: { label: 'À surveiller',  bg: c.amberSoft, fg: c.amberDark, dot: c.amber },
+  changer:    { label: 'À changer',     bg: c.redSoft,   fg: c.red,      dot: c.red },
+};
+const ETAT_LIST = [['neuf', 'Neuf'], ['bon', 'Bon'], ['surveiller', 'À surveiller'], ['changer', 'À changer']];
+const NATURE_LIST = [['neuf', 'Neuf'], ['recreuse', 'Recreusé'], ['rechape', 'Réchappé'], ['rechape_recreuse', 'Réchappé + recreusé']];
+const NATURE_LABEL = Object.fromEntries(NATURE_LIST);
+const MARQUES_PL = ['Michelin', 'Continental', 'Bridgestone', 'Goodyear', 'Hankook', 'Pirelli', 'Dunlop', 'Firestone', 'Barum', 'Kormoran', 'Recamic', 'Bandvulc', 'Insa Turbo', 'Autre'];
 
 /* Icônes silhouettes par type de véhicule (dessinées pour le poids lourd) */
 function VehiculeIcon({ type, size = 22, color = '#fff' }) {
@@ -753,8 +781,225 @@ function VehiculeIcon({ type, size = 22, color = '#fff' }) {
   );
 }
 
-function ParcClient({ vehicules = [] }) {
+/* Formulaire d'un pneu (une case d'emplacement) */
+function PneuForm({ slot, readOnly = false, onClose, onSave, onClear }) {
+  const p = slot.data || {};
+  if (readOnly) {
+    const m = p.etat ? ETAT_PNEU[p.etat] : null;
+    const Ligne = ({ k, v }) => (
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderBottom: `1px solid ${c.line}` }}>
+        <span style={{ fontSize: 13, color: c.muted, fontWeight: 600 }}>{k}</span>
+        <span style={{ fontSize: 13.5, color: c.ink, fontWeight: 700, textAlign: 'right' }}>{v}</span>
+      </div>
+    );
+    return (
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+        <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Essieu {slot.essieu} · {slot.lib}</div>
+            <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+          </div>
+          {!p.id ? (
+            <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '24px 0' }}>Ce pneu n'est pas encore renseigné.</div>
+          ) : (
+            <div>
+              <Ligne k="Marque" v={p.marque || '—'} />
+              <Ligne k="Dimension" v={p.dimension || '—'} />
+              <Ligne k="Profondeur de gomme" v={p.profondeur != null ? `${p.profondeur} mm` : '—'} />
+              <Ligne k="État" v={m ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: m.bg, color: m.fg, borderRadius: 999, padding: '3px 10px', fontSize: 12.5, fontWeight: 700 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: m.dot }} />{m.label}</span> : '—'} />
+              <Ligne k="Nature" v={NATURE_LABEL[p.nature] || '—'} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  const [marque, setMarque] = useState(p.marque || '');
+  const [dimension, setDimension] = useState(p.dimension || '');
+  const [profondeur, setProfondeur] = useState(p.profondeur != null ? String(p.profondeur) : '');
+  const [etat, setEtat] = useState(p.etat || 'bon');
+  const [nature, setNature] = useState(p.nature || 'neuf');
+  const [busy, setBusy] = useState(false);
+  const existe = !!(slot.data && slot.data.id);
+
+  const save = async () => {
+    setBusy(true);
+    await onSave({ marque: marque.trim(), dimension, profondeur: profondeur === '' ? null : Number(profondeur), etat, nature });
+    setBusy(false);
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80, padding: 0 }}>
+      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '92dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Essieu {slot.essieu} · {slot.lib}</div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+        </div>
+
+        <label style={labelStyle}>Marque</label>
+        <input list="marques-pl" value={marque} onChange={(e) => setMarque(e.target.value)} placeholder="Ex. Michelin" style={{ ...fieldStyle, marginBottom: 13 }} />
+        <datalist id="marques-pl">{MARQUES_PL.map((m) => <option key={m} value={m} />)}</datalist>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Dimension</label>
+            <select value={dimension} onChange={(e) => setDimension(e.target.value)} style={fieldStyle}>
+              <option value="">—</option>
+              {POS_TYPES.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 120 }}>
+            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 5 }}><Gauge size={13} color={c.muted} /> Gomme</label>
+            <div style={{ position: 'relative' }}>
+              <input type="number" inputMode="decimal" step="0.5" min="0" value={profondeur} onChange={(e) => setProfondeur(e.target.value)} placeholder="8" style={{ ...fieldStyle, paddingRight: 34 }} />
+              <span style={{ position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: c.muted, fontWeight: 600 }}>mm</span>
+            </div>
+          </div>
+        </div>
+
+        <label style={labelStyle}>État</label>
+        <div style={{ ...chipRow, marginBottom: 14 }}>
+          {ETAT_LIST.map(([v, lab]) => {
+            const on = etat === v; const m = ETAT_PNEU[v];
+            return <button key={v} onClick={() => setEtat(v)} style={{ border: `1.5px solid ${on ? m.dot : c.line}`, background: on ? m.bg : c.surface, color: on ? m.fg : c.muted, borderRadius: 999, padding: '7px 13px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: m.dot }} />{lab}</button>;
+          })}
+        </div>
+
+        <label style={labelStyle}>Nature</label>
+        <select value={nature} onChange={(e) => setNature(e.target.value)} style={{ ...fieldStyle, marginBottom: 18 }}>
+          {NATURE_LIST.map(([v, lab]) => <option key={v} value={v}>{lab}</option>)}
+        </select>
+
+        <button onClick={save} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: existe ? 10 : 0 }}><Check size={17} /> {busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+        {existe && (
+          <button onClick={() => { onClear(); onClose(); }} style={{ width: '100%', padding: '11px', borderRadius: 12, border: `1px solid ${c.line}`, background: c.surface, color: c.red, fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Trash2 size={15} /> Vider cette case</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Un pneu sur le schéma (vu de dessus) — cliquable */
+function TyreTop({ pos, pneu, readOnly, onTap }) {
+  const rempli = !!pneu;
+  const m = rempli && pneu.etat ? ETAT_PNEU[pneu.etat] : null;
+  const col = m ? m.dot : c.line;
+  const disabled = readOnly && !rempli;
+  const infos = rempli ? `${pos.lib} — ${pneu.marque || 'sans marque'}${pneu.dimension ? ' · ' + pneu.dimension : ''}${pneu.profondeur != null ? ' · ' + pneu.profondeur + ' mm' : ''}` : `${pos.lib} — non renseigné`;
+  return (
+    <button onClick={disabled ? undefined : onTap} disabled={disabled} title={infos} aria-label={infos} style={{
+      width: 34, height: 50, borderRadius: 8, border: `2.5px ${rempli ? 'solid' : 'dashed'} ${rempli ? col : c.line}`,
+      background: rempli ? '#fff' : c.paper, position: 'relative', zIndex: 1, flexShrink: 0, padding: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: disabled ? 'default' : 'pointer',
+    }}>
+      <div style={{ position: 'absolute', inset: '7px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', pointerEvents: 'none', opacity: rempli ? 0.28 : 0.18 }}>
+        {[0, 1, 2].map((k) => <div key={k} style={{ height: 2.5, background: rempli ? col : c.muted, borderRadius: 2 }} />)}
+      </div>
+      {rempli
+        ? <span style={{ fontSize: 11.5, fontWeight: 800, color: c.ink, zIndex: 1, background: '#fff', borderRadius: 4, padding: '0 2px' }}>{pneu.profondeur != null ? pneu.profondeur : '•'}</span>
+        : <Plus size={15} color={c.muted} />}
+    </button>
+  );
+}
+
+/* Écran détaillé d'un véhicule : ses pneus par essieu */
+function PneusVehicule({ vehicule, pneus = [], readOnly = false, onBack, onSaveConfig, onSaveTyre, onDeleteTyre }) {
+  const essieux = essieuxDe(vehicule);
+  const [slot, setSlot] = useState(null);
+  const pneuAt = (essieu, pos) => pneus.find((p) => p.essieu === essieu && p.pos === pos) || null;
+  const total = essieux.reduce((n, t) => n + posDe(t).length, 0);
+  const remplis = pneus.length;
+  const aChanger = pneus.filter((p) => p.etat === 'changer').length;
+
+  const addEssieu = (type) => onSaveConfig([...essieux, type]);
+  const removeLast = () => {
+    if (!window.confirm(`Retirer l'essieu ${essieux.length} et ses pneus ?`)) return;
+    onSaveConfig(essieux.slice(0, -1), essieux.length);
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Retour au parc</button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '13px 15px', marginBottom: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={vehicule.vtype} size={26} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}><Plate value={vehicule.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{vehicule.vtype}</div></div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c.paper, border: `1px solid ${c.line}`, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700, color: c.ink }}><CircleDot size={13} color={c.muted} /> {remplis}/{total} pneus renseignés</span>
+        {aChanger > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c.redSoft, color: c.red, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700 }}><AlertTriangle size={13} /> {aChanger} à changer</span>}
+      </div>
+
+      {essieux.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '34px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}` }}>
+          Aucun essieu. {readOnly ? '' : 'Ajoutez-en un ci-dessous.'}
+        </div>
+      ) : (
+        <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: '16px 10px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: c.muted, letterSpacing: '0.12em' }}>AVANT</div>
+          <div style={{ width: 56, height: 30, borderRadius: '11px 11px 5px 5px', background: c.asphalt, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 6 }}><VehiculeIcon type={vehicule.vtype} size={20} /></div>
+          {essieux.map((type, i) => {
+            const num = i + 1;
+            const ps = posDe(type);
+            const half = ps.length / 2;
+            const left = ps.slice(0, half);
+            const right = ps.slice(half);
+            const tyre = (pos) => (
+              <TyreTop key={pos.code} pos={pos} pneu={pneuAt(num, pos.code)} readOnly={readOnly}
+                onTap={() => setSlot({ essieu: num, pos: pos.code, lib: pos.lib, data: pneuAt(num, pos.code) })} />
+            );
+            return (
+              <React.Fragment key={num}>
+                <div style={{ width: 12, height: 20, background: c.asphalt }} />
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: c.muted, marginBottom: 7 }}>Essieu {num}</div>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                  <div style={{ position: 'absolute', left: '13%', right: '13%', height: 7, background: c.asphalt, borderRadius: 4, zIndex: 0 }} />
+                  <div style={{ display: 'flex', gap: 6, zIndex: 1 }}>{left.map(tyre)}</div>
+                  <div style={{ width: 15, height: 15, borderRadius: 4, background: c.asphalt, margin: '0 12px', zIndex: 1, flexShrink: 0 }} />
+                  <div style={{ display: 'flex', gap: 6, zIndex: 1 }}>{right.map(tyre)}</div>
+                </div>
+              </React.Fragment>
+            );
+          })}
+          <div style={{ width: 12, height: 16, background: c.asphalt, marginTop: 2 }} />
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: c.muted, letterSpacing: '0.12em', marginTop: 6 }}>ARRIÈRE</div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 11, justifyContent: 'center', marginTop: 16, paddingTop: 13, borderTop: `1px solid ${c.line}`, width: '100%' }}>
+            {ETAT_LIST.map(([v, lab]) => <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: c.muted, fontWeight: 600 }}><span style={{ width: 9, height: 9, borderRadius: 999, background: ETAT_PNEU[v].dot }} />{lab}</span>)}
+          </div>
+          <div style={{ textAlign: 'center', fontSize: 11, color: c.muted, marginTop: 9, lineHeight: 1.4 }}>
+            Le chiffre = profondeur (mm).{readOnly ? ' Touchez un pneu pour voir le détail.' : ' Touchez un pneu pour le renseigner.'}
+          </div>
+        </div>
+      )}
+
+      {!readOnly && (
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${c.line}` }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Modifier la disposition</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => addEssieu('simple')} style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.ink, borderRadius: 10, padding: '9px 12px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={15} /> Essieu simple</button>
+            <button onClick={() => addEssieu('jumele')} style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.ink, borderRadius: 10, padding: '9px 12px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={15} /> Essieu jumelé</button>
+            {essieux.length > 0 && <button onClick={removeLast} style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 10, padding: '9px 12px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Minus size={15} /> Retirer le dernier</button>}
+          </div>
+        </div>
+      )}
+
+      {slot && (
+        <PneuForm slot={slot} readOnly={readOnly} onClose={() => setSlot(null)}
+          onSave={(fields) => onSaveTyre({ essieu: slot.essieu, pos: slot.pos, ...fields })}
+          onClear={() => slot.data && onDeleteTyre(slot.data)} />
+      )}
+    </div>
+  );
+}
+
+function ParcClient({ vehicules = [], pneus = [] }) {
+  const [sel, setSel] = useState(null);
   const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
+  const vehic = sel ? liste.find((v) => v.id === sel) : null;
+  if (vehic) return <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)} readOnly onBack={() => setSel(null)} />;
   return (
     <div>
       <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Mon parc</h1>
@@ -766,27 +1011,32 @@ function ParcClient({ vehicules = [] }) {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {liste.map((v) => (
-            <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px' }}>
-              <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={26} /></div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Plate value={v.immat} />
-                <div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}</div>
-              </div>
-            </div>
-          ))}
+          {liste.map((v) => {
+            const np = pneus.filter((p) => p.vehiculeId === v.id).length;
+            return (
+              <button key={v.id} onClick={() => setSel(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px', textAlign: 'left', width: '100%' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={26} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Plate value={v.immat} />
+                  <div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div>
+                </div>
+                <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function ParcAdmin({ accounts, parcClients, vehicules, onAdd, onDelete }) {
+function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre }) {
   const clients = accounts.filter((a) => a.type === 'client' && parcClients.includes(a.id)).sort((a, b) => (a.company || '').localeCompare(b.company || ''));
   const [clientId, setClientId] = useState('');
   const [immat, setImmat] = useState('');
   const [vtype, setVtype] = useState('Tracteur');
   const [busy, setBusy] = useState(false);
+  const [selVeh, setSelVeh] = useState(null);
   const client = clients.find((cl) => cl.id === clientId);
   const liste = vehicules.filter((v) => v.clientId === clientId).sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const valid = clientId && immat.trim();
@@ -797,6 +1047,15 @@ function ParcAdmin({ accounts, parcClients, vehicules, onAdd, onDelete }) {
     setBusy(false);
     setImmat('');
   };
+
+  const vehic = selVeh ? vehicules.find((v) => v.id === selVeh) : null;
+  if (vehic) return (
+    <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)}
+      onBack={() => setSelVeh(null)}
+      onSaveConfig={(essieux, removeNum) => onSaveConfig(vehic.id, essieux, removeNum)}
+      onSaveTyre={(fields) => onSaveTyre({ vehiculeId: vehic.id, clientId: vehic.clientId, ...fields })}
+      onDeleteTyre={onDeleteTyre} />
+  );
 
   return (
     <div>
@@ -853,7 +1112,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, onAdd, onDelete }) {
   );
 }
 
-function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [] }) {
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [] }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   const isClient = user.type === 'client';
@@ -879,7 +1138,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
@@ -1639,7 +1898,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1684,7 +1943,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
-          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} />
+          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} parcClients={parcClients} onToggleParc={onToggleParc} />}
@@ -1712,6 +1971,7 @@ export default function App() {
   const [champsConfig, setChampsConfig] = useState({});
   const [parcClients, setParcClients] = useState([]);
   const [vehicules, setVehicules] = useState([]);
+  const [pneusVeh, setPneusVeh] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -1894,6 +2154,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Pneus par véhicule (admin : tous ; client : les siens via RLS) */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('pneus_vehicule').select('*');
+      if (active && data) setPneusVeh(data.map(mapPneu));
+    };
+    load();
+    const ch = supabase.channel('pneusveh-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pneus_vehicule' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -2014,6 +2289,22 @@ export default function App() {
     await supabase.from('vehicules').delete().eq('id', v.id);
     flash('Véhicule supprimé');
   };
+  const vehiculeConfigSave = async (vehiculeId, essieux, removeEssieuNum) => {
+    const { error } = await supabase.from('vehicules').update({ essieux }).eq('id', vehiculeId);
+    if (error) { flash('Erreur : ' + error.message); return; }
+    if (removeEssieuNum) await supabase.from('pneus_vehicule').delete().eq('vehicule_id', vehiculeId).eq('essieu', removeEssieuNum);
+  };
+  const pneuSave = async ({ vehiculeId, clientId, essieu, pos, marque, dimension, profondeur, etat, nature }) => {
+    const { error } = await supabase.from('pneus_vehicule').upsert(
+      { vehicule_id: vehiculeId, client_id: clientId, essieu, pos, marque, dimension, profondeur, etat, nature },
+      { onConflict: 'vehicule_id,essieu,pos' }
+    );
+    if (error) flash('Erreur : ' + error.message); else flash('Pneu enregistré');
+  };
+  const pneuDelete = async (p) => {
+    await supabase.from('pneus_vehicule').delete().eq('id', p.id);
+    flash('Pneu retiré');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -2055,7 +2346,8 @@ export default function App() {
       factures={factures} onFactureUpload={factureUpload} onFactureDelete={factureDelete} onFactureOpen={factureOpen}
       champsConfig={champsConfig} onSaveChamps={saveChamps}
       parcClients={parcClients} onToggleParc={toggleParc}
-      vehicules={vehicules} onVehiculeAdd={vehiculeAdd} onVehiculeDelete={vehiculeDelete} />
+      vehicules={vehicules} onVehiculeAdd={vehiculeAdd} onVehiculeDelete={vehiculeDelete}
+      pneusVeh={pneusVeh} onPneuConfig={vehiculeConfigSave} onPneuSave={pneuSave} onPneuDelete={pneuDelete} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -2070,7 +2362,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
