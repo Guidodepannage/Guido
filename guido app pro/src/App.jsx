@@ -700,13 +700,27 @@ function AdminContact({ contact, onSave }) {
   );
 }
 
-function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen }) {
+function ParcClient() {
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Mon parc</h1>
+      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Suivi de l'état et de l'historique de vos pneumatiques.</p>
+      <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '44px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>
+        <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
+        Votre suivi de parc sera bientôt disponible ici.<br />Guido renseignera l'état de vos véhicules et pneumatiques.
+      </div>
+    </div>
+  );
+}
+
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   const isClient = user.type === 'client';
   const navItems = [
     { k: 'main', label: 'Accueil', Icon: LayoutDashboard },
     ...(isClient ? [{ k: 'factures', label: 'Factures', Icon: FileText }] : []),
+    ...(isClient && parcAutorise ? [{ k: 'parc', label: 'Mon parc', Icon: Truck }] : []),
     { k: 'contact', label: 'Contact', Icon: Mail },
   ];
   return (
@@ -725,7 +739,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
@@ -860,7 +874,7 @@ function ChampsModal({ client, champs, onSave, onClose }) {
   );
 }
 
-function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus, onRegenLink, onManageChamps, nbChamps }) {
+function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus, nbPneus, onRegenLink, onManageChamps, nbChamps, parcActif, onToggleParc }) {
   const [regen, setRegen] = useState(false);
   const doRegen = async () => { setRegen(true); await onRegenLink(a); setRegen(false); };
   return (
@@ -903,6 +917,11 @@ function AccountCard({ a, inviteLink, onCopy, onStatus, onDelete, onManagePneus,
       {a.type === 'client' && (
         <button onClick={() => onManageChamps(a)} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: c.paper, color: c.amberDark, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
           <ClipboardList size={16} /> Champs du formulaire{nbChamps ? ` (${nbChamps})` : ''}
+        </button>
+      )}
+      {a.type === 'client' && (
+        <button onClick={() => onToggleParc(a, !parcActif)} style={{ width: '100%', borderTop: `1px solid ${c.line}`, border: 'none', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: c.line, background: parcActif ? c.greenSoft : c.paper, color: parcActif ? c.green : c.muted, padding: '11px', fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+          <Truck size={16} /> Suivi de parc {parcActif ? '· activé ✓' : '· désactivé'}
         </button>
       )}
       <div style={{ borderTop: `1px solid ${c.line}`, display: 'flex' }}>
@@ -1179,7 +1198,7 @@ function MyInterventions({ missions, profileId, onAdvance }) {
   );
 }
 
-function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth, onRegenLink, champsConfig = {}, onSaveChamps }) {
+function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, stock = [], clientStock = [], onToggleAuth, onRegenLink, champsConfig = {}, onSaveChamps, parcClients = [], onToggleParc }) {
   const [filter, setFilter] = useState('all'); const [q, setQ] = useState('');
   const [pneusClient, setPneusClient] = useState(null);
   const [champsClient, setChampsClient] = useState(null);
@@ -1206,7 +1225,7 @@ function AccountsView({ accounts, invites, onOpen, onCopy, onStatus, onDelete, s
       </div>
       {shown.length === 0 && <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '36px 0' }}>Aucun compte.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} onRegenLink={onRegenLink} onManageChamps={setChampsClient} nbChamps={a.type === 'client' ? (champsConfig[a.id]?.length || 0) : 0} />)}
+        {shown.map((a) => <AccountCard key={a.id} a={a} inviteLink={invites[a.id]} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} onManagePneus={setPneusClient} nbPneus={a.type === 'client' ? authIdsFor(a.id).length : 0} onRegenLink={onRegenLink} onManageChamps={setChampsClient} nbChamps={a.type === 'client' ? (champsConfig[a.id]?.length || 0) : 0} parcActif={parcClients.includes(a.id)} onToggleParc={onToggleParc} />)}
       </div>
       {pneusClient && (
         <PneusModal
@@ -1480,7 +1499,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1526,7 +1545,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
-          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} />}
+          : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} parcClients={parcClients} onToggleParc={onToggleParc} />}
       </main>
       {modal && <CreateModal onClose={() => setModal(false)} onCreate={onCreate} />}
       {pwd && <PasswordModal onClose={() => setPwd(false)} />}
@@ -1549,6 +1568,7 @@ export default function App() {
   const [contact, setContact] = useState(null);
   const [factures, setFactures] = useState([]);
   const [champsConfig, setChampsConfig] = useState({});
+  const [parcClients, setParcClients] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -1701,6 +1721,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Suivi de parc : clients autorisés */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('parc_clients').select('client_id');
+      if (active && data) setParcClients(data.map((r) => r.client_id));
+    };
+    load();
+    const ch = supabase.channel('parc-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'parc_clients' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -1807,6 +1842,11 @@ export default function App() {
     await supabase.from('client_champs').upsert({ client_id: clientId, champs }, { onConflict: 'client_id' });
     flash('Champs enregistrés');
   };
+  const toggleParc = async (client, actif) => {
+    if (actif) await supabase.from('parc_clients').insert({ client_id: client.id });
+    else await supabase.from('parc_clients').delete().eq('client_id', client.id);
+    flash(actif ? 'Suivi de parc activé' : 'Suivi de parc désactivé');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -1846,7 +1886,8 @@ export default function App() {
       stock={stock} onStockCreate={stockCreate} onStockUpdate={stockUpdate} onStockDelete={stockDelete} onStockAdjust={stockAdjust}
       clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} onDecline={decline}
       factures={factures} onFactureUpload={factureUpload} onFactureDelete={factureDelete} onFactureOpen={factureOpen}
-      champsConfig={champsConfig} onSaveChamps={saveChamps} />
+      champsConfig={champsConfig} onSaveChamps={saveChamps}
+      parcClients={parcClients} onToggleParc={toggleParc} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -1861,7 +1902,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
