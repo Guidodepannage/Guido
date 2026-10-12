@@ -700,20 +700,110 @@ function AdminContact({ contact, onSave }) {
   );
 }
 
-function ParcClient() {
+const VEHIC_TYPES = ['Tracteur', 'Porteur', 'Remorque', 'Semi-remorque'];
+const mapVehicule = (r) => ({ id: r.id, clientId: r.client_id, immat: r.immat, vtype: r.vtype, createdAt: new Date(r.created_at).getTime() });
+
+function ParcClient({ vehicules = [] }) {
+  const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   return (
     <div>
       <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Mon parc</h1>
-      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Suivi de l'état et de l'historique de vos pneumatiques.</p>
-      <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '44px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>
-        <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
-        Votre suivi de parc sera bientôt disponible ici.<br />Guido renseignera l'état de vos véhicules et pneumatiques.
-      </div>
+      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Vos véhicules suivis par Guido.</p>
+      {liste.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '44px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>
+          <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
+          Aucun véhicule enregistré pour le moment.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {liste.map((v) => (
+            <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Truck size={21} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Plate value={v.immat} />
+                <div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false }) {
+function ParcAdmin({ accounts, parcClients, vehicules, onAdd, onDelete }) {
+  const clients = accounts.filter((a) => a.type === 'client' && parcClients.includes(a.id)).sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+  const [clientId, setClientId] = useState('');
+  const [immat, setImmat] = useState('');
+  const [vtype, setVtype] = useState('Tracteur');
+  const [busy, setBusy] = useState(false);
+  const client = clients.find((cl) => cl.id === clientId);
+  const liste = vehicules.filter((v) => v.clientId === clientId).sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
+  const valid = clientId && immat.trim();
+
+  const ajouter = async () => {
+    setBusy(true);
+    await onAdd({ clientId, immat: immat.trim().toUpperCase(), vtype });
+    setBusy(false);
+    setImmat('');
+  };
+
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Suivi de parc</h1>
+
+      {clients.length === 0 ? (
+        <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '13px 15px', fontSize: 13.5, color: c.ink }}>
+          Aucun client n'a le suivi de parc activé. Activez-le depuis l'onglet <b>Comptes</b> (bouton « Suivi de parc » sur une fiche client).
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}><Users size={14} color={c.muted} /> Client</label>
+            <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={fieldStyle}>
+              <option value="">Choisir un client…</option>
+              {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.company} — {cl.name}</option>)}
+            </select>
+          </div>
+
+          {client && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 22 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Ajouter un véhicule</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}><label style={labelStyle}>Immatriculation</label>
+                    <input style={{ ...fieldStyle, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'ui-monospace, Menlo, monospace' }} value={immat} onChange={(e) => setImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
+                  <div style={{ flex: 1 }}><label style={labelStyle}>Type</label>
+                    <select style={fieldStyle} value={vtype} onChange={(e) => setVtype(e.target.value)}>
+                      {VEHIC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select></div>
+                </div>
+                <button onClick={ajouter} disabled={!valid || busy} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 14.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Plus size={17} /> {busy ? 'Ajout…' : 'Ajouter au parc'}</button>
+              </div>
+
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Parc de {client.company} ({liste.length})</div>
+              {liste.length === 0 ? (
+                <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0' }}>Aucun véhicule pour ce client.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  {liste.map((v) => (
+                    <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '12px 14px' }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Truck size={19} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}</div></div>
+                      <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center' }}><Trash2 size={15} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [] }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   const isClient = user.type === 'client';
@@ -739,7 +829,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
@@ -1499,7 +1589,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1511,6 +1601,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
     { k: 'missions', label: 'Missions', Icon: ClipboardList, badge: aAssigner },
     { k: 'interventions', label: 'Mes interventions', Icon: Flag, badge: mesInterventions },
     { k: 'stock', label: 'Stock', Icon: Package, badge: aRecommander },
+    { k: 'parc', label: 'Suivi de parc', Icon: Truck },
     { k: 'factures', label: 'Factures', Icon: FileText },
     { k: 'contact', label: 'Contact', Icon: Mail },
     { k: 'accounts', label: 'Comptes', Icon: Users },
@@ -1543,6 +1634,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
+          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} parcClients={parcClients} onToggleParc={onToggleParc} />}
@@ -1569,6 +1661,7 @@ export default function App() {
   const [factures, setFactures] = useState([]);
   const [champsConfig, setChampsConfig] = useState({});
   const [parcClients, setParcClients] = useState([]);
+  const [vehicules, setVehicules] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -1736,6 +1829,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Véhicules (admin : tous ; client : les siens via RLS) */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('vehicules').select('*');
+      if (active && data) setVehicules(data.map(mapVehicule));
+    };
+    load();
+    const ch = supabase.channel('vehic-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicules' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -1847,6 +1955,15 @@ export default function App() {
     else await supabase.from('parc_clients').delete().eq('client_id', client.id);
     flash(actif ? 'Suivi de parc activé' : 'Suivi de parc désactivé');
   };
+  const vehiculeAdd = async ({ clientId, immat, vtype }) => {
+    const { error } = await supabase.from('vehicules').insert({ client_id: clientId, immat, vtype });
+    if (error) flash('Erreur : ' + error.message); else flash('Véhicule ajouté');
+  };
+  const vehiculeDelete = async (v) => {
+    if (!window.confirm(`Supprimer le véhicule ${v.immat} ? Cette action est définitive.`)) return;
+    await supabase.from('vehicules').delete().eq('id', v.id);
+    flash('Véhicule supprimé');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -1887,7 +2004,8 @@ export default function App() {
       clientStock={clientStock} onToggleAuth={authToggle} onTakeCharge={takeCharge} onAdvance={advance} onRegenLink={regenLink} contact={contact} onSaveContact={saveContact} onDecline={decline}
       factures={factures} onFactureUpload={factureUpload} onFactureDelete={factureDelete} onFactureOpen={factureOpen}
       champsConfig={champsConfig} onSaveChamps={saveChamps}
-      parcClients={parcClients} onToggleParc={toggleParc} />
+      parcClients={parcClients} onToggleParc={toggleParc}
+      vehicules={vehicules} onVehiculeAdd={vehiculeAdd} onVehiculeDelete={vehiculeDelete} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -1902,7 +2020,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
