@@ -731,6 +731,19 @@ const NATURE_LIST = [['neuf', 'Neuf'], ['recreuse', 'Recreusé'], ['rechape', 'R
 const NATURE_LABEL = Object.fromEntries(NATURE_LIST);
 const MARQUES_PL = ['Michelin', 'Continental', 'Bridgestone', 'Goodyear', 'Hankook', 'Pirelli', 'Dunlop', 'Firestone', 'Barum', 'Kormoran', 'Recamic', 'Bandvulc', 'Insa Turbo', 'Autre'];
 
+/* ---- Interventions (historique par véhicule) ---- */
+const INTERV_TYPES = [['recreusage', 'Recreusage'], ['permutation', 'Permutation'], ['changement', 'Changement'], ['reparation', 'Réparation'], ['autre', 'Autre']];
+const INTERV_LABEL = Object.fromEntries(INTERV_TYPES);
+const INTERV_META = {
+  recreusage:  { bg: c.blueSoft,  fg: c.blue },
+  permutation: { bg: c.amberSoft, fg: c.amberDark },
+  changement:  { bg: c.greenSoft, fg: c.green },
+  reparation:  { bg: c.redSoft,   fg: c.red },
+  autre:       { bg: c.line,      fg: c.muted },
+};
+const mapInterv = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, date: r.date, type: r.type, note: r.note, createdAt: new Date(r.created_at).getTime() });
+const fmtDateFr = (d) => { if (!d) return '—'; const x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); };
+
 /* Icônes silhouettes par type de véhicule (dessinées pour le poids lourd) */
 function VehiculeIcon({ type, size = 22, color = '#fff' }) {
   const s = { width: size, height: size, display: 'block' };
@@ -778,6 +791,35 @@ function VehiculeIcon({ type, size = 22, color = '#fff' }) {
       {roue(5)}{roue(18)}{roue(27)}
       <path d="M2 15 h8 M13 16 h17" {...w} />
     </svg>
+  );
+}
+
+/* Formulaire d'une intervention */
+function IntervForm({ onClose, onSave }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(today);
+  const [type, setType] = useState('recreusage');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => { setBusy(true); await onSave({ date, type, note: note.trim() }); setBusy(false); onClose(); };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '92dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Nouvelle intervention</div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+        </div>
+        <label style={labelStyle}>Date</label>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...fieldStyle, marginBottom: 13 }} />
+        <label style={labelStyle}>Type d'intervention</label>
+        <div style={{ ...chipRow, marginBottom: 14 }}>
+          {INTERV_TYPES.map(([v, lab]) => { const on = type === v; const m = INTERV_META[v]; return <button key={v} onClick={() => setType(v)} style={{ border: `1.5px solid ${on ? m.fg : c.line}`, background: on ? m.bg : c.surface, color: on ? m.fg : c.muted, borderRadius: 999, padding: '7px 13px', fontSize: 13, fontWeight: 700 }}>{lab}</button>; })}
+        </div>
+        <label style={labelStyle}>Note (facultatif)</label>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Détails : emplacement, marque posée, observations…" style={{ ...fieldStyle, marginBottom: 18, resize: 'vertical', lineHeight: 1.4 }} />
+        <button onClick={save} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Check size={17} /> {busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+      </div>
+    </div>
   );
 }
 
@@ -904,9 +946,11 @@ function TyreTop({ pos, pneu, readOnly, onTap }) {
 }
 
 /* Écran détaillé d'un véhicule : ses pneus par essieu */
-function PneusVehicule({ vehicule, pneus = [], readOnly = false, onBack, onSaveConfig, onSaveTyre, onDeleteTyre }) {
+function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = false, onBack, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
   const essieux = essieuxDe(vehicule);
   const [slot, setSlot] = useState(null);
+  const [intervOpen, setIntervOpen] = useState(false);
+  const historique = [...interventions].sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
   const pneuAt = (essieu, pos) => pneus.find((p) => p.essieu === essieu && p.pos === pos) || null;
   const total = essieux.reduce((n, t) => n + posDe(t).length, 0);
   const remplis = pneus.length;
@@ -975,8 +1019,36 @@ function PneusVehicule({ vehicule, pneus = [], readOnly = false, onBack, onSaveC
         </div>
       )}
 
+      <div style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: c.ink }}>Historique des interventions</div>
+          {!readOnly && <button onClick={() => setIntervOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: c.amber, color: '#fff', borderRadius: 10, padding: '8px 12px', fontSize: 13, fontWeight: 700 }}><Plus size={15} /> Ajouter</button>}
+        </div>
+        {historique.length === 0 ? (
+          <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '24px 12px', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune intervention enregistrée.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {historique.map((it) => {
+              const m = INTERV_META[it.type] || INTERV_META.autre;
+              return (
+                <div key={it.id} style={{ display: 'flex', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{INTERV_LABEL[it.type] || 'Autre'}</span>
+                      <span style={{ fontSize: 12.5, color: c.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}><Clock size={12} /> {fmtDateFr(it.date)}</span>
+                    </div>
+                    {it.note && <div style={{ fontSize: 13, color: c.ink, marginTop: 6, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{it.note}</div>}
+                  </div>
+                  {!readOnly && <button onClick={() => onDeleteInterv(it)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '7px 9px', display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0 }}><Trash2 size={14} /></button>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {!readOnly && (
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${c.line}` }}>
+        <div style={{ marginTop: 22, paddingTop: 16, borderTop: `1px solid ${c.line}` }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Modifier la disposition</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={() => addEssieu('simple')} style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.ink, borderRadius: 10, padding: '9px 12px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Plus size={15} /> Essieu simple</button>
@@ -991,15 +1063,16 @@ function PneusVehicule({ vehicule, pneus = [], readOnly = false, onBack, onSaveC
           onSave={(fields) => onSaveTyre({ essieu: slot.essieu, pos: slot.pos, ...fields })}
           onClear={() => slot.data && onDeleteTyre(slot.data)} />
       )}
+      {intervOpen && <IntervForm onClose={() => setIntervOpen(false)} onSave={(f) => onAddInterv(f)} />}
     </div>
   );
 }
 
-function ParcClient({ vehicules = [], pneus = [] }) {
+function ParcClient({ vehicules = [], pneus = [], interventions = [] }) {
   const [sel, setSel] = useState(null);
   const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const vehic = sel ? liste.find((v) => v.id === sel) : null;
-  if (vehic) return <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)} readOnly onBack={() => setSel(null)} />;
+  if (vehic) return <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)} interventions={interventions.filter((it) => it.vehiculeId === vehic.id)} readOnly onBack={() => setSel(null)} />;
   return (
     <div>
       <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Mon parc</h1>
@@ -1030,7 +1103,7 @@ function ParcClient({ vehicules = [], pneus = [] }) {
   );
 }
 
-function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre }) {
+function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
   const clients = accounts.filter((a) => a.type === 'client' && parcClients.includes(a.id)).sort((a, b) => (a.company || '').localeCompare(b.company || ''));
   const [clientId, setClientId] = useState('');
   const [immat, setImmat] = useState('');
@@ -1051,10 +1124,13 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], onAdd, onDele
   const vehic = selVeh ? vehicules.find((v) => v.id === selVeh) : null;
   if (vehic) return (
     <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)}
+      interventions={interventions.filter((it) => it.vehiculeId === vehic.id)}
       onBack={() => setSelVeh(null)}
       onSaveConfig={(essieux, removeNum) => onSaveConfig(vehic.id, essieux, removeNum)}
       onSaveTyre={(fields) => onSaveTyre({ vehiculeId: vehic.id, clientId: vehic.clientId, ...fields })}
-      onDeleteTyre={onDeleteTyre} />
+      onDeleteTyre={onDeleteTyre}
+      onAddInterv={(f) => onAddInterv({ vehiculeId: vehic.id, clientId: vehic.clientId, ...f })}
+      onDeleteInterv={onDeleteInterv} />
   );
 
   return (
@@ -1118,7 +1194,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], onAdd, onDele
   );
 }
 
-function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [] }) {
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [], interventions = [] }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   const isClient = user.type === 'client';
@@ -1144,7 +1220,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
@@ -1904,7 +1980,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -1949,7 +2025,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
-          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} />
+          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} interventions={interventions} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} parcClients={parcClients} onToggleParc={onToggleParc} />}
@@ -1978,6 +2054,7 @@ export default function App() {
   const [parcClients, setParcClients] = useState([]);
   const [vehicules, setVehicules] = useState([]);
   const [pneusVeh, setPneusVeh] = useState([]);
+  const [interventions, setInterventions] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -2175,6 +2252,21 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Interventions (admin : toutes ; client : les siennes via RLS) */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('interventions').select('*');
+      if (active && data) setInterventions(data.map(mapInterv));
+    };
+    load();
+    const ch = supabase.channel('interv-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -2311,6 +2403,15 @@ export default function App() {
     await supabase.from('pneus_vehicule').delete().eq('id', p.id);
     flash('Pneu retiré');
   };
+  const intervAdd = async ({ vehiculeId, clientId, date, type, note }) => {
+    const { error } = await supabase.from('interventions').insert({ vehicule_id: vehiculeId, client_id: clientId, date, type, note });
+    if (error) flash('Erreur : ' + error.message); else flash('Intervention enregistrée');
+  };
+  const intervDelete = async (it) => {
+    if (!window.confirm('Supprimer cette intervention ?')) return;
+    await supabase.from('interventions').delete().eq('id', it.id);
+    flash('Intervention supprimée');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -2353,7 +2454,8 @@ export default function App() {
       champsConfig={champsConfig} onSaveChamps={saveChamps}
       parcClients={parcClients} onToggleParc={toggleParc}
       vehicules={vehicules} onVehiculeAdd={vehiculeAdd} onVehiculeDelete={vehiculeDelete}
-      pneusVeh={pneusVeh} onPneuConfig={vehiculeConfigSave} onPneuSave={pneuSave} onPneuDelete={pneuDelete} />
+      pneusVeh={pneusVeh} onPneuConfig={vehiculeConfigSave} onPneuSave={pneuSave} onPneuDelete={pneuDelete}
+      interventions={interventions} onIntervAdd={intervAdd} onIntervDelete={intervDelete} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -2368,7 +2470,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh} interventions={interventions}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
