@@ -746,7 +746,8 @@ const INTERV_META = {
   reparation:  { bg: c.redSoft,   fg: c.red },
   autre:       { bg: c.line,      fg: c.muted },
 };
-const mapInterv = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, date: r.date, type: r.type, note: r.note, emplacements: Array.isArray(r.emplacements) ? r.emplacements : [], kilometrage: r.kilometrage, intervenant: r.intervenant, details: r.details || {}, createdAt: new Date(r.created_at).getTime() });
+const mapInterv = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, date: r.date, types: Array.isArray(r.types) && r.types.length ? r.types : (r.type ? [r.type] : []), note: r.note, emplacements: Array.isArray(r.emplacements) ? r.emplacements : [], kilometrage: r.kilometrage, intervenant: r.intervenant, details: r.details || {}, createdAt: new Date(r.created_at).getTime() });
+const intervTypesDe = (it) => (it.types && it.types.length ? it.types : (it.type ? [it.type] : []));
 const fmtDateFr = (d) => { if (!d) return '—'; const x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); };
 
 /* Icônes silhouettes par type de véhicule (dessinées pour le poids lourd) */
@@ -804,7 +805,7 @@ function IntervForm({ vehicule, onClose, onSave }) {
   const today = new Date().toISOString().slice(0, 10);
   const emplacementsDispo = emplList(vehicule);
   const [date, setDate] = useState(today);
-  const [type, setType] = useState('recreusage');
+  const [types, setTypes] = useState([]);
   const [empl, setEmpl] = useState([]);
   const [km, setKm] = useState('');
   const [intervenant, setIntervenant] = useState('');
@@ -818,16 +819,19 @@ function IntervForm({ vehicule, onClose, onSave }) {
   const [busy, setBusy] = useState(false);
 
   const toggleEmpl = (code) => setEmpl((xs) => xs.includes(code) ? xs.filter((x) => x !== code) : [...xs, code]);
+  const toggleType = (v) => setTypes((xs) => xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]);
 
   const buildDetails = () => {
-    if (type === 'changement') { const d = {}; if (marque.trim()) d.marque = marque.trim(); if (dimension) d.dimension = dimension; if (profPose !== '') d.profondeur = Number(profPose); return d; }
-    if (type === 'recreusage') { const d = {}; if (profAvant !== '') d.profAvant = Number(profAvant); if (profApres !== '') d.profApres = Number(profApres); return d; }
-    return {};
+    const d = {};
+    if (types.includes('changement')) { if (marque.trim()) d.marque = marque.trim(); if (dimension) d.dimension = dimension; if (profPose !== '') d.profondeur = Number(profPose); }
+    if (types.includes('recreusage')) { if (profAvant !== '') d.profAvant = Number(profAvant); if (profApres !== '') d.profApres = Number(profApres); }
+    return d;
   };
 
   const save = async () => {
+    if (types.length === 0) return;
     setBusy(true);
-    await onSave({ date, type, emplacements: empl, kilometrage: km === '' ? null : Number(km), intervenant: intervenant.trim() || null, note: note.trim(), details: buildDetails() });
+    await onSave({ date, types, type: types[0], emplacements: empl, kilometrage: km === '' ? null : Number(km), intervenant: intervenant.trim() || null, note: note.trim(), details: buildDetails() });
     setBusy(false);
     onClose();
   };
@@ -847,9 +851,9 @@ function IntervForm({ vehicule, onClose, onSave }) {
             <input type="number" inputMode="numeric" value={km} onChange={(e) => setKm(e.target.value)} placeholder="123456" style={fieldStyle} /></div>
         </div>
 
-        <label style={labelStyle}>Type d'intervention</label>
+        <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}>Type(s) d'intervention <span style={{ fontWeight: 600, color: c.muted }}>· plusieurs possibles</span></label>
         <div style={{ ...chipRow, marginBottom: 14 }}>
-          {INTERV_TYPES.map(([v, lab]) => { const on = type === v; const m = INTERV_META[v]; return <button key={v} onClick={() => setType(v)} style={{ border: `1.5px solid ${on ? m.fg : c.line}`, background: on ? m.bg : c.surface, color: on ? m.fg : c.muted, borderRadius: 999, padding: '7px 13px', fontSize: 13, fontWeight: 700 }}>{lab}</button>; })}
+          {INTERV_TYPES.map(([v, lab]) => { const on = types.includes(v); const m = INTERV_META[v]; return <button key={v} onClick={() => toggleType(v)} style={{ border: `1.5px solid ${on ? m.fg : c.line}`, background: on ? m.bg : c.surface, color: on ? m.fg : c.muted, borderRadius: 999, padding: '7px 13px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>{on && <Check size={14} />}{lab}</button>; })}
         </div>
 
         <label style={labelStyle}>Emplacement(s) concerné(s)</label>
@@ -861,7 +865,7 @@ function IntervForm({ vehicule, onClose, onSave }) {
           </div>
         )}
 
-        {type === 'changement' && (
+        {types.includes('changement') && (
           <div style={{ background: c.paper, borderRadius: 12, padding: 13, marginBottom: 14 }}>
             <div style={{ ...subLabel, marginBottom: 10 }}>Pneu posé</div>
             <label style={labelStyle}>Marque</label>
@@ -876,7 +880,7 @@ function IntervForm({ vehicule, onClose, onSave }) {
           </div>
         )}
 
-        {type === 'recreusage' && (
+        {types.includes('recreusage') && (
           <div style={{ background: c.paper, borderRadius: 12, padding: 13, marginBottom: 14, display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}><label style={labelStyle}>Profondeur avant</label>
               <div style={{ position: 'relative' }}><input type="number" step="0.5" value={profAvant} onChange={(e) => setProfAvant(e.target.value)} placeholder="3" style={{ ...fieldStyle, paddingRight: 34 }} /><span style={{ position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: c.muted, fontWeight: 600 }}>mm</span></div></div>
@@ -892,18 +896,21 @@ function IntervForm({ vehicule, onClose, onSave }) {
         <label style={labelStyle}>Note (facultatif)</label>
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Observations…" style={{ ...fieldStyle, marginBottom: 18, resize: 'vertical', lineHeight: 1.4 }} />
 
-        <button onClick={save} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Check size={17} /> {busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+        {types.length === 0 && <div style={{ fontSize: 12.5, color: c.muted, textAlign: 'center', marginBottom: 10 }}>Choisissez au moins un type.</div>}
+        <button onClick={save} disabled={busy || types.length === 0} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: (busy || types.length === 0) ? c.line : c.amber, color: (busy || types.length === 0) ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Check size={17} /> {busy ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
     </div>
   );
 }
 
-/* Résumé texte des champs "détails" d'une intervention */
-function intervDetailsText(it) {
+/* Résumé des champs "détails" d'une intervention (plusieurs lignes possibles) */
+function intervDetailsLines(it) {
   const d = it.details || {};
-  if (it.type === 'changement') { const parts = [d.marque, d.dimension, d.profondeur != null ? d.profondeur + ' mm' : null].filter(Boolean); return parts.length ? 'Posé : ' + parts.join(' · ') : ''; }
-  if (it.type === 'recreusage' && (d.profAvant != null || d.profApres != null)) return `Profondeur : ${d.profAvant != null ? d.profAvant : '?'} → ${d.profApres != null ? d.profApres : '?'} mm`;
-  return '';
+  const lines = [];
+  const pose = [d.marque, d.dimension, d.profondeur != null ? d.profondeur + ' mm' : null].filter(Boolean);
+  if (pose.length) lines.push('Posé : ' + pose.join(' · '));
+  if (d.profAvant != null || d.profApres != null) lines.push(`Profondeur : ${d.profAvant != null ? d.profAvant : '?'} → ${d.profApres != null ? d.profApres : '?'} mm`);
+  return lines;
 }
 
 /* Mini-historique d'un pneu (interventions touchant cet emplacement) */
@@ -912,12 +919,14 @@ function PneuHisto({ items }) {
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${c.line}` }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: c.muted, marginBottom: 9 }}>Historique de ce pneu</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {items.map((it) => { const m = INTERV_META[it.type] || INTERV_META.autre; const dt = intervDetailsText(it); return (
-          <div key={it.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '2px 9px', fontSize: 11.5, fontWeight: 700 }}>{INTERV_LABEL[it.type] || 'Autre'}</span>
-            <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>{fmtDateFr(it.date)}</span>
-            {dt && <span style={{ fontSize: 12, color: c.ink }}>· {dt}</span>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items.map((it) => { const tys = intervTypesDe(it); const lines = intervDetailsLines(it); return (
+          <div key={it.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {tys.map((t) => { const m = INTERV_META[t] || INTERV_META.autre; return <span key={t} style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '2px 9px', fontSize: 11.5, fontWeight: 700 }}>{INTERV_LABEL[t] || 'Autre'}</span>; })}
+              <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>{fmtDateFr(it.date)}</span>
+            </div>
+            {lines.map((l, i) => <span key={i} style={{ fontSize: 12, color: c.ink }}>{l}</span>)}
           </div>
         ); })}
       </div>
@@ -1135,12 +1144,13 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {historique.map((it) => {
-              const m = INTERV_META[it.type] || INTERV_META.autre;
+              const tys = intervTypesDe(it);
+              const lines = intervDetailsLines(it);
               return (
                 <div key={it.id} style={{ display: 'flex', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{INTERV_LABEL[it.type] || 'Autre'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {tys.map((t) => { const m = INTERV_META[t] || INTERV_META.autre; return <span key={t} style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{INTERV_LABEL[t] || 'Autre'}</span>; })}
                       <span style={{ fontSize: 12.5, color: c.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}><Clock size={12} /> {fmtDateFr(it.date)}</span>
                       {fmtKm(it.kilometrage) && <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>· {fmtKm(it.kilometrage)}</span>}
                     </div>
@@ -1149,7 +1159,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
                         {it.emplacements.map((code) => <span key={code} style={{ background: c.paper, border: `1px solid ${c.line}`, color: c.ink, borderRadius: 7, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>{emplLabel(code)}</span>)}
                       </div>
                     )}
-                    {intervDetailsText(it) && <div style={{ fontSize: 12.5, color: c.ink, marginTop: 6, fontWeight: 600 }}>{intervDetailsText(it)}</div>}
+                    {lines.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: c.ink, marginTop: 6, fontWeight: 600 }}>{l}</div>)}
                     {it.note && <div style={{ fontSize: 13, color: c.ink, marginTop: 5, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{it.note}</div>}
                     {it.intervenant && <div style={{ fontSize: 11.5, color: c.muted, marginTop: 6 }}>par {it.intervenant}</div>}
                   </div>
@@ -2517,8 +2527,8 @@ export default function App() {
     await supabase.from('pneus_vehicule').delete().eq('id', p.id);
     flash('Pneu retiré');
   };
-  const intervAdd = async ({ vehiculeId, clientId, date, type, note, emplacements, kilometrage, intervenant, details }) => {
-    const { error } = await supabase.from('interventions').insert({ vehicule_id: vehiculeId, client_id: clientId, date, type, note, emplacements, kilometrage, intervenant, details });
+  const intervAdd = async ({ vehiculeId, clientId, date, type, types, note, emplacements, kilometrage, intervenant, details }) => {
+    const { error } = await supabase.from('interventions').insert({ vehicule_id: vehiculeId, client_id: clientId, date, type, types, note, emplacements, kilometrage, intervenant, details });
     if (error) flash('Erreur : ' + error.message); else flash('Intervention enregistrée');
   };
   const intervDelete = async (it) => {
