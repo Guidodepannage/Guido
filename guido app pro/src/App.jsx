@@ -913,6 +913,104 @@ function intervDetailsLines(it) {
   return lines;
 }
 
+/* Sélecteur segmenté (onglets internes) */
+function Seg({ value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', background: c.paper, border: `1px solid ${c.line}`, borderRadius: 11, padding: 3, marginBottom: 18 }}>
+      {options.map(([v, lab]) => { const on = value === v; return <button key={v} onClick={() => onChange(v)} style={{ flex: 1, border: 'none', background: on ? c.surface : 'transparent', color: on ? c.ink : c.muted, borderRadius: 9, padding: '9px 8px', fontSize: 13.5, fontWeight: 700, boxShadow: on ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>{lab}</button>; })}
+    </div>
+  );
+}
+
+/* Carte d'affichage d'une intervention (lecture) */
+function IntervCard({ it, canDelete = false, onDelete }) {
+  const tys = intervTypesDe(it);
+  const lines = intervDetailsLines(it);
+  return (
+    <div style={{ display: 'flex', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {tys.map((t) => { const m = INTERV_META[t] || INTERV_META.autre; return <span key={t} style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{INTERV_LABEL[t] || 'Autre'}</span>; })}
+          <span style={{ fontSize: 12.5, color: c.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}><Clock size={12} /> {fmtDateFr(it.date)}</span>
+          {fmtKm(it.kilometrage) && <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>· {fmtKm(it.kilometrage)}</span>}
+        </div>
+        {it.emplacements && it.emplacements.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+            {it.emplacements.map((code) => <span key={code} style={{ background: c.paper, border: `1px solid ${c.line}`, color: c.ink, borderRadius: 7, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>{emplLabel(code)}</span>)}
+          </div>
+        )}
+        {lines.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: c.ink, marginTop: 6, fontWeight: 600 }}>{l}</div>)}
+        {it.note && <div style={{ fontSize: 13, color: c.ink, marginTop: 5, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{it.note}</div>}
+        {it.intervenant && <div style={{ fontSize: 11.5, color: c.muted, marginTop: 6 }}>par {it.intervenant}</div>}
+      </div>
+      {canDelete && <button onClick={onDelete} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '7px 9px', display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0 }}><Trash2 size={14} /></button>}
+    </div>
+  );
+}
+
+/* Rapports par jour : les interventions d'un parc regroupées par journée */
+function RapportsJour({ vehicules = [], interventions = [] }) {
+  const [jour, setJour] = useState(null);
+  const vById = {}; vehicules.forEach((v) => { vById[v.id] = v; });
+  const parJour = {};
+  interventions.forEach((it) => { if (!it.date) return; (parJour[it.date] = parJour[it.date] || []).push(it); });
+  const jours = Object.keys(parJour).sort((a, b) => b.localeCompare(a));
+
+  if (jour) {
+    const items = parJour[jour] || [];
+    const parVeh = {};
+    items.forEach((it) => { (parVeh[it.vehiculeId] = parVeh[it.vehiculeId] || []).push(it); });
+    const vehIds = Object.keys(parVeh).sort((a, b) => ((vById[a]?.immat) || '').localeCompare((vById[b]?.immat) || ''));
+    return (
+      <div>
+        <button onClick={() => setJour(null)} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Tous les rapports</button>
+        <div style={{ background: c.asphalt, color: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }}>Rapport d'intervention</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 3 }}>{fmtDateFr(jour)}</div>
+          <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{vehIds.length} véhicule{vehIds.length > 1 ? 's' : ''} · {items.length} intervention{items.length > 1 ? 's' : ''}</div>
+        </div>
+        {vehIds.map((vid) => {
+          const v = vById[vid] || { immat: '—', vtype: '' };
+          const its = [...parVeh[vid]].sort((a, b) => b.createdAt - a.createdAt);
+          return (
+            <div key={vid} style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={21} /></div>
+                <div><Plate value={v.immat} /><div style={{ fontSize: 12, color: c.muted, marginTop: 3 }}>{v.vtype}</div></div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {its.map((it) => <IntervCard key={it.id} it={it} />)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (jours.length === 0) {
+    return <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '40px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>Aucune intervention enregistrée pour le moment.</div>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      {jours.map((d) => {
+        const items = parJour[d];
+        const nbVeh = new Set(items.map((it) => it.vehiculeId)).size;
+        return (
+          <button key={d} onClick={() => setJour(d)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '13px 15px', textAlign: 'left', width: '100%' }}>
+            <div style={{ width: 42, height: 42, borderRadius: 11, background: c.amberSoft, color: c.amberDark, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><ClipboardList size={20} /></div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: c.ink }}>{fmtDateFr(d)}</div>
+              <div style={{ fontSize: 12.5, color: c.muted, marginTop: 3 }}>{nbVeh} véhicule{nbVeh > 1 ? 's' : ''} · {items.length} intervention{items.length > 1 ? 's' : ''}</div>
+            </div>
+            <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* Mini-historique d'un pneu (interventions touchant cet emplacement) */
 function PneuHisto({ items }) {
   if (!items || items.length === 0) return null;
@@ -1143,30 +1241,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
           <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '24px 12px', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucune intervention enregistrée.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {historique.map((it) => {
-              const tys = intervTypesDe(it);
-              const lines = intervDetailsLines(it);
-              return (
-                <div key={it.id} style={{ display: 'flex', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      {tys.map((t) => { const m = INTERV_META[t] || INTERV_META.autre; return <span key={t} style={{ background: m.bg, color: m.fg, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{INTERV_LABEL[t] || 'Autre'}</span>; })}
-                      <span style={{ fontSize: 12.5, color: c.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}><Clock size={12} /> {fmtDateFr(it.date)}</span>
-                      {fmtKm(it.kilometrage) && <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>· {fmtKm(it.kilometrage)}</span>}
-                    </div>
-                    {it.emplacements && it.emplacements.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
-                        {it.emplacements.map((code) => <span key={code} style={{ background: c.paper, border: `1px solid ${c.line}`, color: c.ink, borderRadius: 7, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>{emplLabel(code)}</span>)}
-                      </div>
-                    )}
-                    {lines.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: c.ink, marginTop: 6, fontWeight: 600 }}>{l}</div>)}
-                    {it.note && <div style={{ fontSize: 13, color: c.ink, marginTop: 5, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{it.note}</div>}
-                    {it.intervenant && <div style={{ fontSize: 11.5, color: c.muted, marginTop: 6 }}>par {it.intervenant}</div>}
-                  </div>
-                  {!readOnly && <button onClick={() => onDeleteInterv(it)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '7px 9px', display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0 }}><Trash2 size={14} /></button>}
-                </div>
-              );
-            })}
+            {historique.map((it) => <IntervCard key={it.id} it={it} canDelete={!readOnly} onDelete={() => onDeleteInterv(it)} />)}
           </div>
         )}
       </div>
@@ -1194,14 +1269,18 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
 
 function ParcClient({ vehicules = [], pneus = [], interventions = [] }) {
   const [sel, setSel] = useState(null);
+  const [mode, setMode] = useState('vehicules');
   const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const vehic = sel ? liste.find((v) => v.id === sel) : null;
   if (vehic) return <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)} interventions={interventions.filter((it) => it.vehiculeId === vehic.id)} readOnly onBack={() => setSel(null)} />;
   return (
     <div>
       <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Mon parc</h1>
-      <p style={{ margin: '0 0 20px', fontSize: 13.5, color: c.muted }}>Vos véhicules suivis par Guido.</p>
-      {liste.length === 0 ? (
+      <p style={{ margin: '0 0 18px', fontSize: 13.5, color: c.muted }}>Vos véhicules suivis par Guido.</p>
+      <Seg value={mode} onChange={setMode} options={[['vehicules', 'Mes véhicules'], ['rapports', 'Rapports']]} />
+      {mode === 'rapports' ? (
+        <RapportsJour vehicules={liste} interventions={interventions} />
+      ) : liste.length === 0 ? (
         <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '44px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>
           <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
           Aucun véhicule enregistré pour le moment.
@@ -1234,6 +1313,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [vtype, setVtype] = useState('Tracteur');
   const [busy, setBusy] = useState(false);
   const [selVeh, setSelVeh] = useState(null);
+  const [mode, setMode] = useState('vehicules');
   const client = clients.find((cl) => cl.id === clientId);
   const liste = vehicules.filter((v) => v.clientId === clientId).sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const valid = clientId && immat.trim();
@@ -1275,7 +1355,13 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
             </select>
           </div>
 
-          {client && (
+          {client && <Seg value={mode} onChange={setMode} options={[['vehicules', 'Véhicules'], ['rapports', 'Rapports']]} />}
+
+          {client && mode === 'rapports' && (
+            <RapportsJour vehicules={liste} interventions={interventions.filter((it) => it.clientId === client.id)} />
+          )}
+
+          {client && mode === 'vehicules' && (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 22 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Ajouter un véhicule</div>
