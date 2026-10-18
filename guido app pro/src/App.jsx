@@ -759,9 +759,15 @@ const RDV_STATUT = {
   refuse:   { label: 'Refusé',   bg: c.redSoft,   fg: c.red,       dot: c.red },
 };
 const mapRdv = (r) => ({ id: r.id, clientId: r.client_id, date: r.date, moment: r.moment, statut: r.statut, note: r.note, origine: r.origine, createdAt: new Date(r.created_at).getTime() });
-const mapConge = (r) => ({ id: r.id, debut: r.debut, fin: r.fin, motif: r.motif, createdAt: new Date(r.created_at).getTime() });
+const mapConge = (r) => ({ id: r.id, debut: r.debut, fin: r.fin, motif: r.motif, type: r.type || 'conges', createdAt: new Date(r.created_at).getTime() });
 const estConge = (str, conges) => (conges || []).some((cg) => str >= cg.debut && str <= cg.fin);
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const INDISPO_TYPES = [['conges', 'Congés'], ['formation', 'Formation'], ['autre', 'Autre']];
+const INDISPO_LABEL = { conges: 'Congés', formation: 'Formation', autre: 'Indisponible' };
+const indispoText = (cg) => {
+  const base = cg.type === 'conges' ? 'Guido est en congés' : cg.type === 'formation' ? 'Guido est en formation' : 'Guido est indisponible';
+  return cg.motif && cg.motif !== INDISPO_LABEL[cg.type] ? `${base} — ${cg.motif}` : base;
+};
 
 /* Icônes silhouettes par type de véhicule (dessinées pour le poids lourd) */
 function VehiculeIcon({ type, size = 22, color = '#fff' }) {
@@ -1576,7 +1582,8 @@ function RdvForm({ clients, defaultDate, conges = [], onClose, onSave }) {
   const [busy, setBusy] = useState(false);
   const estAdmin = Array.isArray(clients);
   const conge = estConge(date, conges);
-  const valid = date && (!estAdmin || clientId) && !conge;
+  const passe = !estAdmin && date && date < todayISO();
+  const valid = date && (!estAdmin || clientId) && !conge && !passe;
   const save = async () => {
     if (!valid) return;
     setBusy(true);
@@ -1601,8 +1608,9 @@ function RdvForm({ clients, defaultDate, conges = [], onClose, onSave }) {
           </>
         )}
         <label style={labelStyle}>Date</label>
-        <input type="date" value={date} min={estAdmin ? undefined : todayISO()} onChange={(e) => setDate(e.target.value)} style={{ ...fieldStyle, marginBottom: conge ? 8 : 13 }} />
-        {conge && <div style={{ display: 'flex', gap: 7, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 10, padding: '9px 11px', fontSize: 12.5, color: c.red, fontWeight: 600, marginBottom: 13 }}><CalendarX size={15} style={{ flexShrink: 0 }} /> Guido est en congés ce jour-là, choisissez une autre date.</div>}
+        <input type="date" value={date} min={estAdmin ? undefined : todayISO()} onChange={(e) => setDate(e.target.value)} style={{ ...fieldStyle, marginBottom: (conge || passe) ? 8 : 13 }} />
+        {passe && <div style={{ display: 'flex', gap: 7, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 10, padding: '9px 11px', fontSize: 12.5, color: c.red, fontWeight: 600, marginBottom: 13 }}><AlertTriangle size={15} style={{ flexShrink: 0 }} /> Impossible de demander une date déjà passée.</div>}
+        {conge && !passe && <div style={{ display: 'flex', gap: 7, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 10, padding: '9px 11px', fontSize: 12.5, color: c.red, fontWeight: 600, marginBottom: 13 }}><CalendarX size={15} style={{ flexShrink: 0 }} /> Guido est indisponible ce jour-là, choisissez une autre date.</div>}
         <label style={labelStyle}>Moment</label>
         <div style={{ ...chipRow, marginBottom: 14 }}>
           {MOMENTS.map(([v, lab]) => { const on = moment === v; return <button key={v} onClick={() => setMoment(v)} style={{ border: `1.5px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.muted, borderRadius: 999, padding: '7px 14px', fontSize: 13, fontWeight: 700 }}>{lab}</button>; })}
@@ -1619,24 +1627,32 @@ function RdvForm({ clients, defaultDate, conges = [], onClose, onSave }) {
 function CongeForm({ onClose, onSave }) {
   const [debut, setDebut] = useState(todayISO());
   const [fin, setFin] = useState(todayISO());
-  const [motif, setMotif] = useState('Congés');
+  const [type, setType] = useState('conges');
+  const [motif, setMotif] = useState('');
   const [busy, setBusy] = useState(false);
   const valid = debut && fin && fin >= debut;
-  const save = async () => { if (!valid) return; setBusy(true); await onSave({ debut, fin, motif: motif.trim() || 'Congés' }); setBusy(false); onClose(); };
+  const save = async () => { if (!valid) return; setBusy(true); await onSave({ debut, fin, type, motif: motif.trim() }); setBusy(false); onClose(); };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
-      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px' }}>
+      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '92dvh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Bloquer une période (congés)</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Bloquer une période</div>
           <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+        </div>
+        <label style={labelStyle}>Motif</label>
+        <div style={{ ...chipRow, marginBottom: 14 }}>
+          {INDISPO_TYPES.map(([v, lab]) => { const on = type === v; return <button key={v} onClick={() => setType(v)} style={{ border: `1.5px solid ${on ? c.red : c.line}`, background: on ? c.redSoft : c.surface, color: on ? c.red : c.muted, borderRadius: 999, padding: '7px 14px', fontSize: 13, fontWeight: 700 }}>{lab}</button>; })}
         </div>
         <div style={{ display: 'flex', gap: 10, marginBottom: 13 }}>
           <div style={{ flex: 1 }}><label style={labelStyle}>Du</label><input type="date" value={debut} onChange={(e) => { setDebut(e.target.value); if (fin < e.target.value) setFin(e.target.value); }} style={fieldStyle} /></div>
           <div style={{ flex: 1 }}><label style={labelStyle}>Au</label><input type="date" value={fin} min={debut} onChange={(e) => setFin(e.target.value)} style={fieldStyle} /></div>
         </div>
-        <label style={labelStyle}>Motif (facultatif)</label>
-        <input value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Congés" style={{ ...fieldStyle, marginBottom: 18 }} />
-        <button onClick={save} disabled={!valid || busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: (!valid || busy) ? c.line : c.red, color: (!valid || busy) ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><CalendarX size={17} /> {busy ? 'Enregistrement…' : 'Bloquer cette période'}</button>
+        {type === 'autre' && (<>
+          <label style={labelStyle}>Précision (facultatif)</label>
+          <input value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Ex. salon, rendez-vous perso…" style={{ ...fieldStyle, marginBottom: 18 }} />
+        </>)}
+        {type !== 'autre' && <div style={{ height: 4 }} />}
+        <button onClick={save} disabled={!valid || busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: (!valid || busy) ? c.line : c.red, color: (!valid || busy) ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 14 }}><CalendarX size={17} /> {busy ? 'Enregistrement…' : 'Bloquer cette période'}</button>
       </div>
     </div>
   );
@@ -1660,7 +1676,7 @@ function PlanningAdmin({ accounts = [], parcClients = [], rdv = [], conges = [],
         <h1 style={{ margin: 0, fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Planning</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setModal('rdv')} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: c.amber, color: '#fff', borderRadius: 10, padding: '9px 13px', fontSize: 13, fontWeight: 700 }}><Plus size={16} /> Rendez-vous</button>
-          <button onClick={() => setModal('conge')} style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 10, padding: '9px 13px', fontSize: 13, fontWeight: 700 }}><CalendarX size={16} /> Congés</button>
+          <button onClick={() => setModal('conge')} style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 10, padding: '9px 13px', fontSize: 13, fontWeight: 700 }}><CalendarX size={16} /> Bloquer</button>
         </div>
       </div>
 
@@ -1686,7 +1702,7 @@ function PlanningAdmin({ accounts = [], parcClients = [], rdv = [], conges = [],
       <MonthCal value={month} onMonth={(d) => setMonth(new Date(month.getFullYear(), month.getMonth() + d, 1))} sel={sel} onSel={setSel} marks={marks} />
 
       <div style={{ fontSize: 13.5, fontWeight: 800, color: c.ink, marginBottom: 10 }}>{fmtDateFr(sel)}</div>
-      {congeDuJour.map((cg) => <div key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 11, padding: '10px 12px', marginBottom: 8 }}><CalendarX size={15} color={c.red} /><div style={{ flex: 1, fontSize: 13, color: c.red, fontWeight: 700 }}>{cg.motif || 'Congés'} <span style={{ fontWeight: 500 }}>({fmtDateFr(cg.debut)} → {fmtDateFr(cg.fin)})</span></div><button onClick={() => onCongeDelete(cg.id)} aria-label="Supprimer" style={{ border: 'none', background: 'transparent', color: c.red, display: 'flex' }}><Trash2 size={15} /></button></div>)}
+      {congeDuJour.map((cg) => <div key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 11, padding: '10px 12px', marginBottom: 8 }}><CalendarX size={15} color={c.red} /><div style={{ flex: 1, fontSize: 13, color: c.red, fontWeight: 700 }}>{INDISPO_LABEL[cg.type] || 'Congés'}{cg.motif ? ` — ${cg.motif}` : ''} <span style={{ fontWeight: 500 }}>({fmtDateFr(cg.debut)} → {fmtDateFr(cg.fin)})</span></div><button onClick={() => onCongeDelete(cg.id)} aria-label="Supprimer" style={{ border: 'none', background: 'transparent', color: c.red, display: 'flex' }}><Trash2 size={15} /></button></div>)}
       {duJour.length === 0 && congeDuJour.length === 0 ? (
         <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '22px 12px', background: c.surface, borderRadius: 12, border: `1px dashed ${c.line}` }}>Aucun rendez-vous ce jour.</div>
       ) : (
@@ -1733,7 +1749,7 @@ function PlanningClient({ rdv = [], conges = [], onRequest, onCancel }) {
       <MonthCal value={month} onMonth={(d) => setMonth(new Date(month.getFullYear(), month.getMonth() + d, 1))} sel={sel} onSel={setSel} marks={marks} />
 
       <div style={{ fontSize: 13.5, fontWeight: 800, color: c.ink, marginBottom: 10 }}>{fmtDateFr(sel)}</div>
-      {congeDuJour.map((cg) => <div key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 11, padding: '10px 12px', marginBottom: 8, fontSize: 13, color: c.red, fontWeight: 700 }}><CalendarX size={15} /> Guido est en congés{cg.motif && cg.motif !== 'Congés' ? ` — ${cg.motif}` : ''}</div>)}
+      {congeDuJour.map((cg) => <div key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 11, padding: '10px 12px', marginBottom: 8, fontSize: 13, color: c.red, fontWeight: 700 }}><CalendarX size={15} /> {indispoText(cg)}</div>)}
       {duJour.length === 0 && congeDuJour.length === 0 ? (
         <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '22px 12px', background: c.surface, borderRadius: 12, border: `1px dashed ${c.line}`, marginBottom: 18 }}>Aucun rendez-vous ce jour.</div>
       ) : (
@@ -3031,8 +3047,8 @@ export default function App() {
     await supabase.from('rdv').delete().eq('id', id);
     flash('Rendez-vous supprimé');
   };
-  const congeAdd = async ({ debut, fin, motif }) => {
-    const { error } = await supabase.from('conges').insert({ debut, fin, motif });
+  const congeAdd = async ({ debut, fin, motif, type }) => {
+    const { error } = await supabase.from('conges').insert({ debut, fin, motif, type });
     if (error) flash('Erreur : ' + error.message); else flash('Période bloquée');
   };
   const congeDelete = async (id) => {
