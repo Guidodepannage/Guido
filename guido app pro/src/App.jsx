@@ -991,9 +991,68 @@ function printRapport({ clientNom, jour, items, vById }) {
   w.document.open(); w.document.write(html); w.document.close();
 }
 
+/* Chargement à la demande de jsPDF + autoTable (depuis un CDN) */
+let _jspdfPromise = null;
+function loadScriptOnce(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('cdn')); document.head.appendChild(s); });
+}
+function loadJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable) return Promise.resolve();
+  if (!_jspdfPromise) _jspdfPromise = loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js').then(() => loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'));
+  return _jspdfPromise;
+}
+
+/* Télécharge directement un vrai fichier PDF (tableau) */
+async function downloadRapportPDF({ clientNom, jour, items, vById }) {
+  await loadJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdfTxt = (s) => String(s == null ? '' : s).replace(/→/g, '->').replace(/—/g, '-').replace(/’/g, "'").replace(/œ/g, 'oe');
+  const rows = [...items].sort((a, b) => ((vById[a.vehiculeId]?.immat) || '').localeCompare((vById[b.vehiculeId]?.immat) || '') || b.createdAt - a.createdAt);
+  const nbVeh = new Set(rows.map((it) => it.vehiculeId)).size;
+  const genere = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const body = rows.map((it) => {
+    const v = vById[it.vehiculeId] || {};
+    return [
+      pdfTxt(`${v.immat || '—'}\n${v.vtype || ''}`),
+      pdfTxt(intervTypesDe(it).map((t) => INTERV_LABEL[t] || 'Autre').join(', ')),
+      pdfTxt((it.emplacements || []).map(emplLabel).join(', ')),
+      pdfTxt(intervDetailsLines(it).join(' ; ')),
+      pdfTxt(fmtKm(it.kilometrage) || ''),
+      pdfTxt(it.intervenant || ''),
+      pdfTxt(it.note || ''),
+    ];
+  });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(16, 35, 60);
+  doc.text('GUIDO', 14, 18);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(108, 113, 120);
+  doc.text("RAPPORT D'INTERVENTION", 14, 23.5);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(12, 26, 46);
+  doc.text(pdfTxt(fmtDateFr(jour)), 196, 15.5, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(108, 113, 120);
+  doc.text(pdfTxt('Client : ' + (clientNom || '—')), 196, 20.5, { align: 'right' });
+  doc.text(`${nbVeh} vehicule(s) - ${rows.length} intervention(s)`, 196, 25, { align: 'right' });
+  doc.setDrawColor(16, 35, 60); doc.setLineWidth(0.6); doc.line(14, 29, 196, 29);
+  doc.autoTable({
+    startY: 33,
+    head: [['Vehicule', 'Type(s)', 'Emplacements', 'Details', 'Km', 'Intervenant', 'Note']],
+    body,
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, textColor: [12, 26, 46], lineColor: [230, 228, 223], lineWidth: 0.1, valign: 'top' },
+    headStyles: { fillColor: [16, 35, 60], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [247, 247, 245] },
+    columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 24 }, 4: { cellWidth: 18 }, 5: { cellWidth: 20 } },
+    margin: { left: 14, right: 14 },
+  });
+  const y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 8;
+  doc.setFontSize(8); doc.setTextColor(108, 113, 120);
+  doc.text(pdfTxt('Document genere le ' + genere + ' via Guido - guidodepannage.vercel.app'), 105, y, { align: 'center' });
+  doc.save(`rapport-${jour}.pdf`);
+}
+
 /* Rapports par jour : les interventions d'un parc regroupées par journée */
 function RapportsJour({ vehicules = [], interventions = [], clientNom = '' }) {
   const [jour, setJour] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const vById = {}; vehicules.forEach((v) => { vById[v.id] = v; });
   const parJour = {};
   interventions.forEach((it) => { if (!it.date) return; (parJour[it.date] = parJour[it.date] || []).push(it); });
@@ -1012,7 +1071,7 @@ function RapportsJour({ vehicules = [], interventions = [], clientNom = '' }) {
           <div style={{ fontSize: 18, fontWeight: 800, marginTop: 3 }}>{fmtDateFr(jour)}</div>
           <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{vehIds.length} véhicule{vehIds.length > 1 ? 's' : ''} · {items.length} intervention{items.length > 1 ? 's' : ''}</div>
         </div>
-        <button onClick={() => printRapport({ clientNom, jour, items, vById })} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1.5px solid ${c.amber}`, background: c.amberSoft, color: c.amberDark, fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }}><Download size={17} /> Exporter en PDF (tableau)</button>
+        <button onClick={async () => { setExporting(true); try { await downloadRapportPDF({ clientNom, jour, items, vById }); } catch (e) { printRapport({ clientNom, jour, items, vById }); } setExporting(false); }} disabled={exporting} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1.5px solid ${c.amber}`, background: exporting ? c.line : c.amberSoft, color: exporting ? c.muted : c.amberDark, fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }}><Download size={17} /> {exporting ? 'Préparation du PDF…' : 'Télécharger en PDF (tableau)'}</button>
         {vehIds.map((vid) => {
           const v = vById[vid] || { immat: '—', vtype: '' };
           const its = [...parVeh[vid]].sort((a, b) => b.createdAt - a.createdAt);
