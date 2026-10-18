@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
   Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
-  ArrowLeft, ChevronRight, CircleDot, Gauge
+  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -750,6 +750,19 @@ const mapInterv = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.cli
 const intervTypesDe = (it) => (it.types && it.types.length ? it.types : (it.type ? [it.type] : []));
 const fmtDateFr = (d) => { if (!d) return '—'; const x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); };
 
+/* ---- Planning : rendez-vous (prises en charge) et congés ---- */
+const MOMENTS = [['journee', 'Journée'], ['matin', 'Matin'], ['apresmidi', 'Après-midi']];
+const MOMENT_LABEL = Object.fromEntries(MOMENTS);
+const RDV_STATUT = {
+  demande:  { label: 'Demandé',  bg: c.amberSoft, fg: c.amberDark, dot: c.amber },
+  confirme: { label: 'Confirmé', bg: c.greenSoft, fg: c.green,     dot: c.green },
+  refuse:   { label: 'Refusé',   bg: c.redSoft,   fg: c.red,       dot: c.red },
+};
+const mapRdv = (r) => ({ id: r.id, clientId: r.client_id, date: r.date, moment: r.moment, statut: r.statut, note: r.note, origine: r.origine, createdAt: new Date(r.created_at).getTime() });
+const mapConge = (r) => ({ id: r.id, debut: r.debut, fin: r.fin, motif: r.motif, createdAt: new Date(r.created_at).getTime() });
+const estConge = (str, conges) => (conges || []).some((cg) => str >= cg.debut && str <= cg.fin);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
 /* Icônes silhouettes par type de véhicule (dessinées pour le poids lourd) */
 function VehiculeIcon({ type, size = 22, color = '#fff' }) {
   const s = { width: size, height: size, display: 'block' };
@@ -1006,7 +1019,7 @@ function loadJsPDF() {
 async function downloadRapportPDF({ clientNom, jour, items, vById }) {
   await loadJsPDF();
   const { jsPDF } = window.jspdf;
-  const pdfTxt = (s) => String(s == null ? '' : s).replace(/→/g, '->').replace(/—/g, '-').replace(/’/g, "'").replace(/œ/g, 'oe');
+  const pdfTxt = (s) => String(s == null ? '' : s).replace(/[   ]/g, ' ').replace(/→/g, '->').replace(/—/g, '-').replace(/’/g, "'").replace(/œ/g, 'oe');
   const rows = [...items].sort((a, b) => ((vById[a.vehiculeId]?.immat) || '').localeCompare((vById[b.vehiculeId]?.immat) || '') || b.createdAt - a.createdAt);
   const nbVeh = new Set(rows.map((it) => it.vehiculeId)).size;
   const genere = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -1507,7 +1520,260 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   );
 }
 
-function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [], interventions = [] }) {
+/* Calendrier mensuel */
+function MonthCal({ value, onMonth, sel, onSel, marks }) {
+  const y = value.getFullYear(), m = value.getMonth();
+  const startOffset = (new Date(y, m, 1).getDay() + 6) % 7;
+  const nb = new Date(y, m + 1, 0).getDate();
+  const today = todayISO();
+  const ds = (d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const cells = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= nb; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const navBtn = { border: `1px solid ${c.line}`, background: c.surface, borderRadius: 9, padding: '6px 9px', display: 'flex', color: c.muted };
+  return (
+    <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: 12, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <button onClick={() => onMonth(-1)} aria-label="Mois précédent" style={navBtn}><ChevronLeft size={18} /></button>
+        <div style={{ fontSize: 14.5, fontWeight: 800, color: c.ink, textTransform: 'capitalize' }}>{value.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</div>
+        <button onClick={() => onMonth(1)} aria-label="Mois suivant" style={navBtn}><ChevronRight size={18} /></button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3, marginBottom: 4 }}>
+        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((w, i) => <div key={i} style={{ textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: c.muted }}>{w}</div>)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3 }}>
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} />;
+          const str = ds(d);
+          const mk = marks(str);
+          const isSel = sel === str;
+          const isToday = str === today;
+          return (
+            <button key={i} onClick={() => onSel(str)} style={{
+              position: 'relative', aspectRatio: '1', borderRadius: 9, padding: 0,
+              border: isSel ? `2px solid ${c.amber}` : (mk.conge ? `1px solid ${c.red}` : '1px solid transparent'),
+              background: mk.conge ? c.redSoft : (isToday ? c.paper : 'transparent'),
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+              color: mk.conge ? c.red : c.ink, fontWeight: isToday ? 800 : 600, fontSize: 13,
+            }}>
+              {d}
+              {mk.statuts.length > 0 && <div style={{ display: 'flex', gap: 2, position: 'absolute', bottom: 4 }}>{mk.statuts.slice(0, 3).map((st, k) => <span key={k} style={{ width: 5, height: 5, borderRadius: 999, background: (RDV_STATUT[st] || {}).dot || c.muted }} />)}</div>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* Formulaire rendez-vous — avec picker client si clients fourni (admin) */
+function RdvForm({ clients, defaultDate, conges = [], onClose, onSave }) {
+  const [clientId, setClientId] = useState('');
+  const [date, setDate] = useState(defaultDate || todayISO());
+  const [moment, setMoment] = useState('journee');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const estAdmin = Array.isArray(clients);
+  const conge = estConge(date, conges);
+  const valid = date && (!estAdmin || clientId) && !conge;
+  const save = async () => {
+    if (!valid) return;
+    setBusy(true);
+    await onSave({ clientId: estAdmin ? clientId : undefined, date, moment, note: note.trim() });
+    setBusy(false);
+    onClose();
+  };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '92dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>{estAdmin ? 'Nouveau rendez-vous' : 'Demander une prise en charge'}</div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+        </div>
+        {estAdmin && (
+          <>
+            <label style={labelStyle}>Client</label>
+            <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={{ ...fieldStyle, marginBottom: 13 }}>
+              <option value="">Choisir un client…</option>
+              {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.company} — {cl.name}</option>)}
+            </select>
+          </>
+        )}
+        <label style={labelStyle}>Date</label>
+        <input type="date" value={date} min={estAdmin ? undefined : todayISO()} onChange={(e) => setDate(e.target.value)} style={{ ...fieldStyle, marginBottom: conge ? 8 : 13 }} />
+        {conge && <div style={{ display: 'flex', gap: 7, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 10, padding: '9px 11px', fontSize: 12.5, color: c.red, fontWeight: 600, marginBottom: 13 }}><CalendarX size={15} style={{ flexShrink: 0 }} /> Guido est en congés ce jour-là, choisissez une autre date.</div>}
+        <label style={labelStyle}>Moment</label>
+        <div style={{ ...chipRow, marginBottom: 14 }}>
+          {MOMENTS.map(([v, lab]) => { const on = moment === v; return <button key={v} onClick={() => setMoment(v)} style={{ border: `1.5px solid ${on ? c.ink : c.line}`, background: on ? c.ink : c.surface, color: on ? '#fff' : c.muted, borderRadius: 999, padding: '7px 14px', fontSize: 13, fontWeight: 700 }}>{lab}</button>; })}
+        </div>
+        <label style={labelStyle}>Note (facultatif)</label>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder={estAdmin ? 'Précisions…' : 'Ce que vous souhaitez (véhicules, besoin…)'} style={{ ...fieldStyle, marginBottom: 18, resize: 'vertical', lineHeight: 1.4 }} />
+        <button onClick={save} disabled={!valid || busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: (!valid || busy) ? c.line : c.amber, color: (!valid || busy) ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Check size={17} /> {busy ? 'Envoi…' : (estAdmin ? 'Planifier' : 'Envoyer la demande')}</button>
+      </div>
+    </div>
+  );
+}
+
+/* Formulaire congés (période bloquée) */
+function CongeForm({ onClose, onSave }) {
+  const [debut, setDebut] = useState(todayISO());
+  const [fin, setFin] = useState(todayISO());
+  const [motif, setMotif] = useState('Congés');
+  const [busy, setBusy] = useState(false);
+  const valid = debut && fin && fin >= debut;
+  const save = async () => { if (!valid) return; setBusy(true); await onSave({ debut, fin, motif: motif.trim() || 'Congés' }); setBusy(false); onClose(); };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Bloquer une période (congés)</div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><label style={labelStyle}>Du</label><input type="date" value={debut} onChange={(e) => { setDebut(e.target.value); if (fin < e.target.value) setFin(e.target.value); }} style={fieldStyle} /></div>
+          <div style={{ flex: 1 }}><label style={labelStyle}>Au</label><input type="date" value={fin} min={debut} onChange={(e) => setFin(e.target.value)} style={fieldStyle} /></div>
+        </div>
+        <label style={labelStyle}>Motif (facultatif)</label>
+        <input value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Congés" style={{ ...fieldStyle, marginBottom: 18 }} />
+        <button onClick={save} disabled={!valid || busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: (!valid || busy) ? c.line : c.red, color: (!valid || busy) ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><CalendarX size={17} /> {busy ? 'Enregistrement…' : 'Bloquer cette période'}</button>
+      </div>
+    </div>
+  );
+}
+
+/* Planning côté admin */
+function PlanningAdmin({ accounts = [], parcClients = [], rdv = [], conges = [], onRdvAdd, onRdvStatut, onRdvDelete, onCongeAdd, onCongeDelete }) {
+  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [sel, setSel] = useState(todayISO());
+  const [modal, setModal] = useState(null);
+  const clients = accounts.filter((a) => a.type === 'client' && parcClients.includes(a.id)).sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+  const nomClient = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
+  const marks = (str) => { const items = rdv.filter((r) => r.date === str); return { statuts: items.map((r) => r.statut), conge: estConge(str, conges) }; };
+  const demandes = rdv.filter((r) => r.statut === 'demande').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const duJour = rdv.filter((r) => r.date === sel).sort((a, b) => (a.moment || '').localeCompare(b.moment || ''));
+  const congeDuJour = conges.filter((cg) => sel >= cg.debut && sel <= cg.fin);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <h1 style={{ margin: 0, fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Planning</h1>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setModal('rdv')} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: c.amber, color: '#fff', borderRadius: 10, padding: '9px 13px', fontSize: 13, fontWeight: 700 }}><Plus size={16} /> Rendez-vous</button>
+          <button onClick={() => setModal('conge')} style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 10, padding: '9px 13px', fontSize: 13, fontWeight: 700 }}><CalendarX size={16} /> Congés</button>
+        </div>
+      </div>
+
+      {demandes.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: c.amberDark, marginBottom: 9, display: 'flex', alignItems: 'center', gap: 6 }}><Bell size={15} /> Demandes à valider ({demandes.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {demandes.map((r) => (
+              <div key={r.id} style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '11px 13px' }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{nomClient(r.clientId)}</div>
+                <div style={{ fontSize: 12.5, color: c.muted, marginTop: 2 }}>{fmtDateFr(r.date)} · {MOMENT_LABEL[r.moment] || ''}</div>
+                {r.note && <div style={{ fontSize: 12.5, color: c.ink, marginTop: 5 }}>{r.note}</div>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button onClick={() => onRdvStatut(r.id, 'confirme')} style={{ flex: 1, border: 'none', background: c.green, color: '#fff', borderRadius: 9, padding: '8px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Check size={15} /> Confirmer</button>
+                  <button onClick={() => onRdvStatut(r.id, 'refuse')} style={{ flex: 1, border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px', fontSize: 13, fontWeight: 700 }}>Refuser</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <MonthCal value={month} onMonth={(d) => setMonth(new Date(month.getFullYear(), month.getMonth() + d, 1))} sel={sel} onSel={setSel} marks={marks} />
+
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: c.ink, marginBottom: 10 }}>{fmtDateFr(sel)}</div>
+      {congeDuJour.map((cg) => <div key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 11, padding: '10px 12px', marginBottom: 8 }}><CalendarX size={15} color={c.red} /><div style={{ flex: 1, fontSize: 13, color: c.red, fontWeight: 700 }}>{cg.motif || 'Congés'} <span style={{ fontWeight: 500 }}>({fmtDateFr(cg.debut)} → {fmtDateFr(cg.fin)})</span></div><button onClick={() => onCongeDelete(cg.id)} aria-label="Supprimer" style={{ border: 'none', background: 'transparent', color: c.red, display: 'flex' }}><Trash2 size={15} /></button></div>)}
+      {duJour.length === 0 && congeDuJour.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '22px 12px', background: c.surface, borderRadius: 12, border: `1px dashed ${c.line}` }}>Aucun rendez-vous ce jour.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {duJour.map((r) => { const st = RDV_STATUT[r.statut] || RDV_STATUT.confirme; return (
+            <div key={r.id} style={{ display: 'flex', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{nomClient(r.clientId)}</span>
+                  <span style={{ background: st.bg, color: st.fg, borderRadius: 999, padding: '2px 9px', fontSize: 11.5, fontWeight: 700 }}>{st.label}</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: c.muted, marginTop: 3 }}>{MOMENT_LABEL[r.moment] || ''}{r.origine === 'client' ? ' · demandé par le client' : ''}</div>
+                {r.note && <div style={{ fontSize: 12.5, color: c.ink, marginTop: 5 }}>{r.note}</div>}
+                {r.statut === 'demande' && <div style={{ display: 'flex', gap: 8, marginTop: 9 }}><button onClick={() => onRdvStatut(r.id, 'confirme')} style={{ border: 'none', background: c.green, color: '#fff', borderRadius: 8, padding: '6px 11px', fontSize: 12.5, fontWeight: 700 }}>Confirmer</button><button onClick={() => onRdvStatut(r.id, 'refuse')} style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 8, padding: '6px 11px', fontSize: 12.5, fontWeight: 700 }}>Refuser</button></div>}
+              </div>
+              <button onClick={() => onRdvDelete(r.id)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '7px 9px', display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0 }}><Trash2 size={14} /></button>
+            </div>
+          ); })}
+        </div>
+      )}
+
+      {modal === 'rdv' && <RdvForm clients={clients} defaultDate={sel} conges={conges} onClose={() => setModal(null)} onSave={onRdvAdd} />}
+      {modal === 'conge' && <CongeForm onClose={() => setModal(null)} onSave={onCongeAdd} />}
+    </div>
+  );
+}
+
+/* Planning côté client */
+function PlanningClient({ rdv = [], conges = [], onRequest, onCancel }) {
+  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [sel, setSel] = useState(todayISO());
+  const [open, setOpen] = useState(false);
+  const marks = (str) => { const items = rdv.filter((r) => r.date === str); return { statuts: items.map((r) => r.statut), conge: estConge(str, conges) }; };
+  const duJour = rdv.filter((r) => r.date === sel).sort((a, b) => (a.moment || '').localeCompare(b.moment || ''));
+  const congeDuJour = conges.filter((cg) => sel >= cg.debut && sel <= cg.fin);
+  const aVenir = rdv.filter((r) => r.date >= todayISO() && r.statut !== 'refuse').sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Planning</h1>
+      <p style={{ margin: '0 0 16px', fontSize: 13.5, color: c.muted }}>Vos prises en charge et les disponibilités de Guido.</p>
+      <button onClick={() => setOpen(true)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 14.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}><Plus size={17} /> Demander une prise en charge</button>
+
+      <MonthCal value={month} onMonth={(d) => setMonth(new Date(month.getFullYear(), month.getMonth() + d, 1))} sel={sel} onSel={setSel} marks={marks} />
+
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: c.ink, marginBottom: 10 }}>{fmtDateFr(sel)}</div>
+      {congeDuJour.map((cg) => <div key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: c.redSoft, border: `1px solid ${c.red}`, borderRadius: 11, padding: '10px 12px', marginBottom: 8, fontSize: 13, color: c.red, fontWeight: 700 }}><CalendarX size={15} /> Guido est en congés{cg.motif && cg.motif !== 'Congés' ? ` — ${cg.motif}` : ''}</div>)}
+      {duJour.length === 0 && congeDuJour.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '22px 12px', background: c.surface, borderRadius: 12, border: `1px dashed ${c.line}`, marginBottom: 18 }}>Aucun rendez-vous ce jour.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+          {duJour.map((r) => { const st = RDV_STATUT[r.statut] || RDV_STATUT.confirme; return (
+            <div key={r.id} style={{ display: 'flex', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{MOMENT_LABEL[r.moment] || ''}</span>
+                  <span style={{ background: st.bg, color: st.fg, borderRadius: 999, padding: '2px 9px', fontSize: 11.5, fontWeight: 700 }}>{st.label}</span>
+                </div>
+                {r.note && <div style={{ fontSize: 12.5, color: c.ink, marginTop: 5 }}>{r.note}</div>}
+              </div>
+              {r.statut === 'demande' && <button onClick={() => onCancel(r.id)} aria-label="Annuler" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '7px 9px', display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0 }}><Trash2 size={14} /></button>}
+            </div>
+          ); })}
+        </div>
+      )}
+
+      {aVenir.length > 0 && (
+        <>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Mes prochains rendez-vous</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {aVenir.slice(0, 8).map((r) => { const st = RDV_STATUT[r.statut] || RDV_STATUT.confirme; return (
+              <button key={r.id} onClick={() => { setSel(r.date); setMonth(new Date(Number(r.date.slice(0, 4)), Number(r.date.slice(5, 7)) - 1, 1)); }} style={{ display: 'flex', alignItems: 'center', gap: 11, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, padding: '11px 13px', textAlign: 'left', width: '100%' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: c.paper, color: c.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Calendar size={18} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{fmtDateFr(r.date)}</div><div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{MOMENT_LABEL[r.moment] || ''}</div></div>
+                <span style={{ background: st.bg, color: st.fg, borderRadius: 999, padding: '2px 9px', fontSize: 11.5, fontWeight: 700 }}>{st.label}</span>
+              </button>
+            ); })}
+          </div>
+        </>
+      )}
+
+      {open && <RdvForm defaultDate={sel} conges={conges} onClose={() => setOpen(false)} onSave={onRequest} />}
+    </div>
+  );
+}
+
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [], interventions = [], rdv = [], conges = [], onRdvRequest, onRdvCancel }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   const isClient = user.type === 'client';
@@ -1515,6 +1781,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
     { k: 'main', label: 'Accueil', Icon: LayoutDashboard },
     ...(isClient ? [{ k: 'factures', label: 'Factures', Icon: FileText }] : []),
     ...(isClient && parcAutorise ? [{ k: 'parc', label: 'Mon parc', Icon: Truck }] : []),
+    ...(isClient && parcAutorise ? [{ k: 'planning', label: 'Planning', Icon: Calendar }] : []),
     { k: 'contact', label: 'Contact', Icon: Mail },
   ];
   return (
@@ -1533,7 +1800,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} clientNom={user.company} /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} clientNom={user.company} /> : view === 'planning' ? <PlanningClient rdv={rdv} conges={conges} onRequest={onRdvRequest} onCancel={onRdvCancel} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
@@ -2293,7 +2560,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete, rdv, conges, onRdvAdd, onRdvStatut, onRdvDelete, onCongeAdd, onCongeDelete }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -2306,6 +2573,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
     { k: 'interventions', label: 'Mes interventions', Icon: Flag, badge: mesInterventions },
     { k: 'stock', label: 'Stock', Icon: Package, badge: aRecommander },
     { k: 'parc', label: 'Suivi de parc', Icon: Truck },
+    { k: 'planning', label: 'Planning', Icon: Calendar, badge: rdv ? rdv.filter((r) => r.statut === 'demande').length : 0 },
     { k: 'factures', label: 'Factures', Icon: FileText },
     { k: 'contact', label: 'Contact', Icon: Mail },
     { k: 'accounts', label: 'Comptes', Icon: Users },
@@ -2339,6 +2607,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
           : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} interventions={interventions} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} />
+          : tab === 'planning' ? <PlanningAdmin accounts={accounts} parcClients={parcClients} rdv={rdv} conges={conges} onRdvAdd={onRdvAdd} onRdvStatut={onRdvStatut} onRdvDelete={onRdvDelete} onCongeAdd={onCongeAdd} onCongeDelete={onCongeDelete} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
           : <AccountsView accounts={accounts} invites={invites} onOpen={() => setModal(true)} onCopy={onCopy} onStatus={onStatus} onDelete={onDelete} stock={stock} clientStock={clientStock} onToggleAuth={onToggleAuth} onRegenLink={onRegenLink} champsConfig={champsConfig} onSaveChamps={onSaveChamps} parcClients={parcClients} onToggleParc={onToggleParc} />}
@@ -2368,6 +2637,8 @@ export default function App() {
   const [vehicules, setVehicules] = useState([]);
   const [pneusVeh, setPneusVeh] = useState([]);
   const [interventions, setInterventions] = useState([]);
+  const [rdv, setRdv] = useState([]);
+  const [conges, setConges] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -2580,6 +2851,27 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
+  /* Planning : rendez-vous + congés */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    let active = true;
+    const load = async () => {
+      const [a, b] = await Promise.all([
+        supabase.from('rdv').select('*'),
+        supabase.from('conges').select('*'),
+      ]);
+      if (!active) return;
+      if (a.data) setRdv(a.data.map(mapRdv));
+      if (b.data) setConges(b.data.map(mapConge));
+    };
+    load();
+    const ch = supabase.channel('planning-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rdv' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conges' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
   /* Actions */
   const logout = async () => { await supabase.auth.signOut(); seen.current = new Set(); setPath('/'); window.history.replaceState({}, '', '/'); };
 
@@ -2725,6 +3017,38 @@ export default function App() {
     await supabase.from('interventions').delete().eq('id', it.id);
     flash('Intervention supprimée');
   };
+  /* Planning — admin */
+  const rdvAdd = async ({ clientId, date, moment, note }) => {
+    const { error } = await supabase.from('rdv').insert({ client_id: clientId, date, moment, note, statut: 'confirme', origine: 'admin' });
+    if (error) flash('Erreur : ' + error.message); else flash('Rendez-vous planifié');
+  };
+  const rdvStatut = async (id, statut) => {
+    await supabase.from('rdv').update({ statut }).eq('id', id);
+    flash(statut === 'confirme' ? 'Rendez-vous confirmé' : 'Demande refusée');
+  };
+  const rdvDelete = async (id) => {
+    if (!window.confirm('Supprimer ce rendez-vous ?')) return;
+    await supabase.from('rdv').delete().eq('id', id);
+    flash('Rendez-vous supprimé');
+  };
+  const congeAdd = async ({ debut, fin, motif }) => {
+    const { error } = await supabase.from('conges').insert({ debut, fin, motif });
+    if (error) flash('Erreur : ' + error.message); else flash('Période bloquée');
+  };
+  const congeDelete = async (id) => {
+    if (!window.confirm('Supprimer cette période de congés ?')) return;
+    await supabase.from('conges').delete().eq('id', id);
+    flash('Période supprimée');
+  };
+  /* Planning — client */
+  const rdvRequest = async ({ date, moment, note }) => {
+    const { error } = await supabase.from('rdv').insert({ client_id: profile.id, date, moment, note, statut: 'demande', origine: 'client' });
+    if (error) flash('Erreur : ' + error.message); else flash('Demande envoyée');
+  };
+  const rdvCancel = async (id) => {
+    await supabase.from('rdv').delete().eq('id', id);
+    flash('Demande annulée');
+  };
 
   const enableAlerts = async () => {
     unlockAudio();
@@ -2768,7 +3092,8 @@ export default function App() {
       parcClients={parcClients} onToggleParc={toggleParc}
       vehicules={vehicules} onVehiculeAdd={vehiculeAdd} onVehiculeDelete={vehiculeDelete}
       pneusVeh={pneusVeh} onPneuConfig={vehiculeConfigSave} onPneuSave={pneuSave} onPneuDelete={pneuDelete}
-      interventions={interventions} onIntervAdd={intervAdd} onIntervDelete={intervDelete} />
+      interventions={interventions} onIntervAdd={intervAdd} onIntervDelete={intervDelete}
+      rdv={rdv} conges={conges} onRdvAdd={rdvAdd} onRdvStatut={rdvStatut} onRdvDelete={rdvDelete} onCongeAdd={congeAdd} onCongeDelete={congeDelete} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -2783,7 +3108,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh} interventions={interventions}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh} interventions={interventions} rdv={rdv} conges={conges} onRdvRequest={rdvRequest} onRdvCancel={rdvCancel}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
