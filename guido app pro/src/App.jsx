@@ -948,8 +948,51 @@ function IntervCard({ it, canDelete = false, onDelete }) {
   );
 }
 
+/* Génère et imprime (→ PDF) un rapport d'une journée sous forme de tableau */
+function printRapport({ clientNom, jour, items, vById }) {
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const rows = [...items].sort((a, b) => ((vById[a.vehiculeId]?.immat) || '').localeCompare((vById[b.vehiculeId]?.immat) || '') || b.createdAt - a.createdAt);
+  const trs = rows.map((it) => {
+    const v = vById[it.vehiculeId] || {};
+    const tys = intervTypesDe(it).map((t) => INTERV_LABEL[t] || 'Autre').join(', ');
+    const empl = (it.emplacements || []).map(emplLabel).join(', ');
+    const det = intervDetailsLines(it).join(' ; ');
+    const km = fmtKm(it.kilometrage) || '';
+    return `<tr><td class="veh"><b>${esc(v.immat || '—')}</b><br><span class="mut">${esc(v.vtype || '')}</span></td><td>${esc(tys)}</td><td>${esc(empl)}</td><td>${esc(det)}</td><td class="nw">${esc(km)}</td><td>${esc(it.intervenant || '')}</td><td>${esc(it.note || '')}</td></tr>`;
+  }).join('');
+  const nbVeh = new Set(rows.map((it) => it.vehiculeId)).size;
+  const genere = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport ${esc(fmtDateFr(jour))}</title><style>
+    @page { size: A4; margin: 14mm; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#0C1A2E; margin:0; }
+    .head { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid #10233C; padding-bottom:10px; margin-bottom:14px; }
+    .brand { font-size:22px; font-weight:800; letter-spacing:-0.02em; }
+    .brand span { color:#E39A00; }
+    .sub { font-size:11px; color:#6C7178; text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }
+    .meta { font-size:12px; text-align:right; line-height:1.55; }
+    .meta b { font-size:14px; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    th { background:#10233C; color:#fff; text-align:left; padding:7px 8px; font-size:10px; text-transform:uppercase; letter-spacing:.04em; }
+    td { padding:7px 8px; border-bottom:1px solid #E6E4DF; vertical-align:top; }
+    tr:nth-child(even) td { background:#F7F7F5; }
+    .veh, .nw { white-space:nowrap; }
+    .mut { color:#6C7178; font-size:10px; }
+    .foot { margin-top:16px; font-size:10px; color:#6C7178; text-align:center; }
+  </style></head><body>
+    <div class="head"><div><div class="brand">GUIDO<span>.</span></div><div class="sub">Rapport d'intervention</div></div>
+    <div class="meta"><b>${esc(fmtDateFr(jour))}</b><br>Client : ${esc(clientNom || '—')}<br>${nbVeh} véhicule${nbVeh > 1 ? 's' : ''} · ${rows.length} intervention${rows.length > 1 ? 's' : ''}</div></div>
+    <table><thead><tr><th>Véhicule</th><th>Type(s)</th><th>Emplacements</th><th>Détails</th><th>Km</th><th>Intervenant</th><th>Note</th></tr></thead><tbody>${trs}</tbody></table>
+    <div class="foot">Document généré le ${esc(genere)} via Guido — guidodepannage.vercel.app</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Autorisez les fenêtres pop-up pour exporter le rapport en PDF.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 /* Rapports par jour : les interventions d'un parc regroupées par journée */
-function RapportsJour({ vehicules = [], interventions = [] }) {
+function RapportsJour({ vehicules = [], interventions = [], clientNom = '' }) {
   const [jour, setJour] = useState(null);
   const vById = {}; vehicules.forEach((v) => { vById[v.id] = v; });
   const parJour = {};
@@ -964,11 +1007,12 @@ function RapportsJour({ vehicules = [], interventions = [] }) {
     return (
       <div>
         <button onClick={() => setJour(null)} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Tous les rapports</button>
-        <div style={{ background: c.asphalt, color: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ background: c.asphalt, color: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 12 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }}>Rapport d'intervention</div>
           <div style={{ fontSize: 18, fontWeight: 800, marginTop: 3 }}>{fmtDateFr(jour)}</div>
           <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{vehIds.length} véhicule{vehIds.length > 1 ? 's' : ''} · {items.length} intervention{items.length > 1 ? 's' : ''}</div>
         </div>
+        <button onClick={() => printRapport({ clientNom, jour, items, vById })} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1.5px solid ${c.amber}`, background: c.amberSoft, color: c.amberDark, fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }}><Download size={17} /> Exporter en PDF (tableau)</button>
         {vehIds.map((vid) => {
           const v = vById[vid] || { immat: '—', vtype: '' };
           const its = [...parVeh[vid]].sort((a, b) => b.createdAt - a.createdAt);
@@ -1267,7 +1311,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
   );
 }
 
-function ParcClient({ vehicules = [], pneus = [], interventions = [] }) {
+function ParcClient({ vehicules = [], pneus = [], interventions = [], clientNom = '' }) {
   const [sel, setSel] = useState(null);
   const [mode, setMode] = useState('vehicules');
   const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
@@ -1279,7 +1323,7 @@ function ParcClient({ vehicules = [], pneus = [], interventions = [] }) {
       <p style={{ margin: '0 0 18px', fontSize: 13.5, color: c.muted }}>Vos véhicules suivis par Guido.</p>
       <Seg value={mode} onChange={setMode} options={[['vehicules', 'Mes véhicules'], ['rapports', 'Rapports']]} />
       {mode === 'rapports' ? (
-        <RapportsJour vehicules={liste} interventions={interventions} />
+        <RapportsJour vehicules={liste} interventions={interventions} clientNom={clientNom} />
       ) : liste.length === 0 ? (
         <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '44px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>
           <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
@@ -1358,7 +1402,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
           {client && <Seg value={mode} onChange={setMode} options={[['vehicules', 'Véhicules'], ['rapports', 'Rapports']]} />}
 
           {client && mode === 'rapports' && (
-            <RapportsJour vehicules={liste} interventions={interventions.filter((it) => it.clientId === client.id)} />
+            <RapportsJour vehicules={liste} interventions={interventions.filter((it) => it.clientId === client.id)} clientNom={client.company} />
           )}
 
           {client && mode === 'vehicules' && (
@@ -1430,7 +1474,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} clientNom={user.company} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
