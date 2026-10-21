@@ -704,6 +704,8 @@ function AdminContact({ contact, onSave }) {
 const VEHIC_TYPES = ['Tracteur', 'Porteur', 'Remorque', 'Semi-remorque'];
 const mapVehicule = (r) => ({ id: r.id, clientId: r.client_id, immat: r.immat, vtype: r.vtype, essieux: Array.isArray(r.essieux) ? r.essieux : null, createdAt: new Date(r.created_at).getTime() });
 
+const normImmat = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 /* ---- Pneus par véhicule (suivi de parc) ---- */
 const mapPneu = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, essieu: r.essieu, pos: r.pos, marque: r.marque, dimension: r.dimension, profondeur: r.profondeur, etat: r.etat, nature: r.nature });
 
@@ -1392,6 +1394,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
 function ParcClient({ vehicules = [], pneus = [], interventions = [], clientNom = '' }) {
   const [sel, setSel] = useState(null);
   const [mode, setMode] = useState('vehicules');
+  const [q, setQ] = useState('');
   const liste = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const vehic = sel ? liste.find((v) => v.id === sel) : null;
   if (vehic) return <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)} interventions={interventions.filter((it) => it.vehiculeId === vehic.id)} readOnly onBack={() => setSel(null)} />;
@@ -1407,23 +1410,37 @@ function ParcClient({ vehicules = [], pneus = [], interventions = [], clientNom 
           <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
           Aucun véhicule enregistré pour le moment.
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {liste.map((v) => {
-            const np = pneus.filter((p) => p.vehiculeId === v.id).length;
-            return (
-              <button key={v.id} onClick={() => setSel(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px', textAlign: 'left', width: '100%' }}>
-                <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={26} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Plate value={v.immat} />
-                  <div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div>
-                </div>
-                <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
-              </button>
-            );
-          })}
-        </div>
-      )}
+      ) : (() => {
+        const vus = liste.filter((v) => normImmat(v.immat).includes(normImmat(q)));
+        return (
+          <>
+            <div style={{ position: 'relative', marginBottom: 12 }}>
+              <Search size={16} color={c.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+              <input value={q} onChange={(e) => setQ(e.target.value.toUpperCase())} placeholder="Rechercher une immatriculation…" style={{ ...fieldStyle, paddingLeft: 36, textTransform: 'uppercase', letterSpacing: '0.04em' }} />
+              {q && <button onClick={() => setQ('')} aria-label="Effacer" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: c.paper, borderRadius: 8, padding: 5, display: 'flex' }}><X size={15} color={c.muted} /></button>}
+            </div>
+            {vus.length === 0 ? (
+              <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '30px 12px', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucun véhicule ne correspond à « {q} ».</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {vus.map((v) => {
+                  const np = pneus.filter((p) => p.vehiculeId === v.id).length;
+                  return (
+                    <button key={v.id} onClick={() => setSel(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px', textAlign: 'left', width: '100%' }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={26} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Plate value={v.immat} />
+                        <div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div>
+                      </div>
+                      <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -1436,7 +1453,10 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [busy, setBusy] = useState(false);
   const [selVeh, setSelVeh] = useState(null);
   const [mode, setMode] = useState('vehicules');
+  const [q, setQ] = useState('');
   const client = clients.find((cl) => cl.id === clientId);
+  const nomClientParc = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
+  const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
   const liste = vehicules.filter((v) => v.clientId === clientId).sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const valid = clientId && immat.trim();
 
@@ -1461,9 +1481,29 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 16px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Suivi de parc</h1>
+      <h1 style={{ margin: '0 0 14px', fontSize: 23, fontWeight: 800, color: c.ink, letterSpacing: '-0.02em' }}>Suivi de parc</h1>
 
-      {clients.length === 0 ? (
+      <div style={{ position: 'relative', marginBottom: 16 }}>
+        <Search size={16} color={c.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+        <input value={q} onChange={(e) => setQ(e.target.value.toUpperCase())} placeholder="Rechercher une immatriculation…" style={{ ...fieldStyle, paddingLeft: 36, textTransform: 'uppercase', letterSpacing: '0.04em' }} />
+        {q && <button onClick={() => setQ('')} aria-label="Effacer" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: c.paper, borderRadius: 8, padding: 5, display: 'flex' }}><X size={15} color={c.muted} /></button>}
+      </div>
+
+      {q.trim() ? (
+        matches.length === 0 ? (
+          <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '34px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}` }}>Aucun véhicule ne correspond à « {q} ».</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {matches.map((v) => (
+              <button key={v.id} onClick={() => setSelVeh(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '12px 14px', textAlign: 'left', width: '100%' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype} · {nomClientParc(v.clientId)}</div></div>
+                <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+              </button>
+            ))}
+          </div>
+        )
+      ) : clients.length === 0 ? (
         <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 12, padding: '13px 15px', fontSize: 13.5, color: c.ink }}>
           Aucun client n'a le suivi de parc activé. Activez-le depuis l'onglet <b>Comptes</b> (bouton « Suivi de parc » sur une fiche client).
         </div>
