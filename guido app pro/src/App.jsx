@@ -242,7 +242,7 @@ function FournitureTag({ v }) {
 
 /* Carte détaillée d'une mission — affiche toutes les informations saisies */
 function MissionDetail({ m, client }) {
-  const dateStr = new Date(m.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const dateStr = new Date(m.createdAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   return (
     <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 11 }}>
@@ -254,7 +254,7 @@ function MissionDetail({ m, client }) {
         <Info label="Type de pneu" value={m.type} mono />
         <Info label="Position" value={m.pos} />
         <Info label="Téléphone chauffeur" value={m.tel} mono />
-        <Info label="Date" value={dateStr} />
+        <Info label="Date et heure" value={dateStr} />
         {!client && <Info label="Client" value={m.clientCompany} />}
         {m.assignedName && <Info label="Prestataire" value={m.assignedName} />}
       </div>
