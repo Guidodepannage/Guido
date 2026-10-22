@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
   Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
-  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX
+  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX, RefreshCw
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -705,6 +705,15 @@ const VEHIC_TYPES = ['Tracteur', 'Porteur', 'Remorque', 'Semi-remorque'];
 const mapVehicule = (r) => ({ id: r.id, clientId: r.client_id, immat: r.immat, vtype: r.vtype, essieux: Array.isArray(r.essieux) ? r.essieux : null, createdAt: new Date(r.created_at).getTime() });
 
 const normImmat = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/* Recharge l'app en récupérant la dernière version (vide le cache PWA) */
+async function forceRefresh() {
+  try {
+    if (window.caches) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
+    if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.update())); }
+  } catch (_) {}
+  window.location.reload();
+}
 
 /* ---- Pneus par véhicule (suivi de parc) ---- */
 const mapPneu = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, essieu: r.essieu, pos: r.pos, marque: r.marque, dimension: r.dimension, profondeur: r.profondeur, etat: r.etat, nature: r.nature });
@@ -1895,6 +1904,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
               <div><div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>Guido</div><div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>{user.company} · <span style={{ textTransform: 'capitalize' }}>{user.type}</span></div></div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={forceRefresh} aria-label="Rafraîchir" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, fontWeight: 600 }}><RefreshCw size={14} /></button>
               <button onClick={() => setPwd(true)} aria-label="Mon compte" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, fontWeight: 600 }}><KeyRound size={14} /></button>
               <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 12.5, fontWeight: 600 }}><LogOut size={14} /> Quitter</button>
             </div>
@@ -2692,6 +2702,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
             {alertsState !== 'on' && (
               <button onClick={onEnableAlerts} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.amber, color: '#fff', border: 'none', borderRadius: 10, padding: '8px 12px', fontSize: 13, fontWeight: 700 }}><BellRing size={15} /> Activer les alertes</button>
             )}
+            <button onClick={forceRefresh} aria-label="Rafraîchir" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 13, fontWeight: 600 }}><RefreshCw size={15} /></button>
             <button onClick={() => setPwd(true)} aria-label="Mon compte" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 11px', fontSize: 13, fontWeight: 600 }}><KeyRound size={15} /></button>
             <button onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 13px', fontSize: 13, fontWeight: 600 }}><LogOut size={15} /> Déconnexion</button>
           </div>
