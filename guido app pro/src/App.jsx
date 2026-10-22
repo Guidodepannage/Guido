@@ -1157,7 +1157,7 @@ function PneuHisto({ items }) {
 }
 
 /* Formulaire d'un pneu (une case d'emplacement) */
-function PneuForm({ slot, interventions = [], readOnly = false, onClose, onSave, onClear }) {
+function PneuForm({ slot, interventions = [], readOnly = false, bulk = false, inspect = null, onClose, onSave, onClear, onNext, onPrev }) {
   const p = slot.data || {};
   const code = `${slot.essieu}-${slot.pos}`;
   const histo = [...interventions].filter((it) => (it.emplacements || []).includes(code)).sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
@@ -1199,21 +1199,28 @@ function PneuForm({ slot, interventions = [], readOnly = false, onClose, onSave,
   const [nature, setNature] = useState(p.nature || 'neuf');
   const [busy, setBusy] = useState(false);
   const existe = !!(slot.data && slot.data.id);
+  const titre = bulk ? `Essieu ${slot.essieu} · tous les pneus` : `Essieu ${slot.essieu} · ${slot.lib}`;
+  const getFields = () => ({ marque: marque.trim(), dimension, profondeur: profondeur === '' ? null : Number(profondeur), etat, nature });
+  const dernier = inspect && inspect.idx + 1 === inspect.total;
 
-  const save = async () => {
-    setBusy(true);
-    await onSave({ marque: marque.trim(), dimension, profondeur: profondeur === '' ? null : Number(profondeur), etat, nature });
-    setBusy(false);
-    onClose();
-  };
+  const save = async () => { setBusy(true); await onSave(getFields()); setBusy(false); onClose(); };
+  const saveNext = async () => { setBusy(true); await onSave(getFields()); setBusy(false); onNext(); };
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80, padding: 0 }}>
       <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '92dvh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Essieu {slot.essieu} · {slot.lib}</div>
-          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>{titre}</div>
+            {inspect && <div style={{ fontSize: 12, color: c.amberDark, fontWeight: 700, marginTop: 2 }}>Inspection · pneu {inspect.idx + 1} / {inspect.total}</div>}
+            {bulk && <div style={{ fontSize: 12, color: c.muted, fontWeight: 600, marginTop: 2 }}>S'applique à tous les pneus de cet essieu</div>}
+          </div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex', flexShrink: 0 }}><X size={17} color={c.muted} /></button>
         </div>
+
+        {inspect && (
+          <div style={{ height: 6, background: c.line, borderRadius: 999, marginBottom: 16, overflow: 'hidden' }}><div style={{ height: '100%', width: `${((inspect.idx + 1) / inspect.total) * 100}%`, background: c.amber, borderRadius: 999 }} /></div>
+        )}
 
         <label style={labelStyle}>Marque</label>
         <input list="marques-pl" value={marque} onChange={(e) => setMarque(e.target.value)} placeholder="Ex. Michelin" style={{ ...fieldStyle, marginBottom: 13 }} />
@@ -1249,11 +1256,23 @@ function PneuForm({ slot, interventions = [], readOnly = false, onClose, onSave,
           {NATURE_LIST.map(([v, lab]) => <option key={v} value={v}>{lab}</option>)}
         </select>
 
-        <button onClick={save} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: existe ? 10 : 0 }}><Check size={17} /> {busy ? 'Enregistrement…' : 'Enregistrer'}</button>
-        {existe && (
-          <button onClick={() => { onClear(); onClose(); }} style={{ width: '100%', padding: '11px', borderRadius: 12, border: `1px solid ${c.line}`, background: c.surface, color: c.red, fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Trash2 size={15} /> Vider cette case</button>
+        {inspect ? (
+          <>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={onPrev} disabled={inspect.idx === 0 || busy} style={{ padding: '13px 14px', borderRadius: 12, border: `1px solid ${c.line}`, background: c.surface, color: c.ink, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, opacity: inspect.idx === 0 ? 0.45 : 1 }}><ChevronLeft size={16} /> Préc.</button>
+              <button onClick={saveNext} disabled={busy} style={{ flex: 1, padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 14.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Check size={16} /> {busy ? '…' : dernier ? 'Enregistrer et terminer' : 'Enregistrer et suivant'}</button>
+            </div>
+            <button onClick={onNext} disabled={busy} style={{ width: '100%', marginTop: 10, border: 'none', background: 'transparent', color: c.muted, fontSize: 13, fontWeight: 700, padding: '6px' }}>{dernier ? 'Terminer sans enregistrer' : 'Passer ce pneu →'}</button>
+          </>
+        ) : (
+          <>
+            <button onClick={save} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: (existe && !bulk) ? 10 : 0 }}><Check size={17} /> {busy ? 'Enregistrement…' : (bulk ? 'Appliquer à l\'essieu' : 'Enregistrer')}</button>
+            {existe && !bulk && (
+              <button onClick={() => { onClear(); onClose(); }} style={{ width: '100%', padding: '11px', borderRadius: 12, border: `1px solid ${c.line}`, background: c.surface, color: c.red, fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Trash2 size={15} /> Vider cette case</button>
+            )}
+          </>
         )}
-        <PneuHisto items={histo} />
+        {!bulk && !inspect && <PneuHisto items={histo} />}
       </div>
     </div>
   );
@@ -1286,7 +1305,10 @@ function TyreTop({ pos, pneu, readOnly, onTap }) {
 function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = false, onBack, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
   const essieux = essieuxDe(vehicule);
   const [slot, setSlot] = useState(null);
+  const [bulkEssieu, setBulkEssieu] = useState(null);
+  const [inspect, setInspect] = useState(null);
   const [intervOpen, setIntervOpen] = useState(false);
+  const inspectList = () => { const l = []; essieux.forEach((t, i) => { const num = i + 1; posDe(t).forEach((pos) => l.push({ essieu: num, pos: pos.code, lib: pos.lib })); }); return l; };
   const historique = [...interventions].sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
   const pneuAt = (essieu, pos) => pneus.find((p) => p.essieu === essieu && p.pos === pos) || null;
   const total = essieux.reduce((n, t) => n + posDe(t).length, 0);
@@ -1313,6 +1335,10 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
         {aChanger > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c.redSoft, color: c.red, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700 }}><AlertTriangle size={13} /> {aChanger} à changer</span>}
       </div>
 
+      {!readOnly && essieux.length > 0 && (
+        <button onClick={() => { const l = inspectList(); if (l.length) setInspect({ list: l, idx: 0 }); }} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 14.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14 }}><ClipboardList size={17} /> Inspecter le véhicule</button>
+      )}
+
       {essieux.length === 0 ? (
         <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '34px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}` }}>
           Aucun essieu. {readOnly ? '' : 'Ajoutez-en un ci-dessous.'}
@@ -1334,7 +1360,11 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
             return (
               <React.Fragment key={num}>
                 <div style={{ width: 12, height: 20, background: c.asphalt }} />
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: c.muted, marginBottom: 7 }}>Essieu {num}</div>
+                {readOnly ? (
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: c.muted, marginBottom: 7 }}>Essieu {num}</div>
+                ) : (
+                  <button onClick={() => setBulkEssieu(num)} style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1px solid ${c.line}`, background: c.paper, color: c.ink, borderRadius: 999, padding: '3px 11px', fontSize: 10.5, fontWeight: 800, marginBottom: 7, letterSpacing: '0.02em' }}>Essieu {num} <Pencil size={10} color={c.muted} /></button>
+                )}
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
                   <div style={{ position: 'absolute', left: '13%', right: '13%', height: 7, background: c.asphalt, borderRadius: 4, zIndex: 0 }} />
                   <div style={{ display: 'flex', gap: 6, zIndex: 1 }}>{left.map(tyre)}</div>
@@ -2114,12 +2144,13 @@ function Dashboard({ accounts, missions, stock = [], goMissions, goAccounts, goS
 function MissionAdminCard({ m, prestataires, onAssign, onTakeCharge, onDecline }) {
   const [sel, setSel] = useState(m.assignedTo || '');
   const canAssign = m.status === 'envoyee' || m.status === 'assignee';
+  const dateStr = new Date(m.createdAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   return (
     <div style={{ background: c.surface, border: `1px solid ${m.status === 'envoyee' ? c.amber : c.line}`, borderRadius: 15, padding: 15 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}><Plate value={m.immat} /><Pill status={m.status} /></div>
       {m.message && <NoteBox text={m.message} />}
       <div style={{ fontSize: 13, color: c.ink, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><MapPin size={14} color={c.amber} /> {m.lieu}</div>
-      <div style={{ fontSize: 12.5, color: c.muted, marginBottom: 2 }}>Client : <b style={{ color: c.ink }}>{m.clientCompany}</b> · <span className="num">{timeAgo(m.createdAt)}</span></div>
+      <div style={{ fontSize: 12.5, color: c.muted, marginBottom: 2 }}>Client : <b style={{ color: c.ink }}>{m.clientCompany}</b> · <span className="num">{dateStr}</span></div>
       <div style={{ fontSize: 12.5, color: c.muted }}>{m.type} · {m.pos} · chauffeur <span className="num">{m.tel}</span></div>
       {m.fourniture && <div style={{ marginTop: 8 }}><FournitureTag v={m.fourniture} /></div>}
       {Array.isArray(m.champs) && m.champs.length > 0 && (
