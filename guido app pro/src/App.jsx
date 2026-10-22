@@ -1509,6 +1509,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [selVeh, setSelVeh] = useState(null);
   const [mode, setMode] = useState('vehicules');
   const [q, setQ] = useState('');
+  const [delegOpen, setDelegOpen] = useState(false);
   const client = clients.find((cl) => cl.id === clientId);
   const nomClientParc = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
   const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
@@ -1582,24 +1583,36 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
 
           {client && mode === 'vehicules' && (
             <>
-              {prestataires.length > 0 && (
-                <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 4 }}>Déléguer ce parc à un prestataire</div>
-                  <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>Il pourra renseigner les pneus et saisir des interventions, sans modifier la liste des véhicules.</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {prestataires.map((pr) => {
-                      const on = estDelegue(pr.id);
-                      return (
-                        <button key={pr.id} onClick={() => onDelegToggle(pr.id, client, !on)} style={{ display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '10px 12px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
-                          <div style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amber : c.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={15} color="#fff" />}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{pr.company || pr.name}</div>{pr.name && pr.company && <div style={{ fontSize: 12, color: c.muted }}>{pr.name}</div>}</div>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: on ? c.amberDark : c.muted, flexShrink: 0 }}>{on ? 'Délégué ✓' : 'Déléguer'}</span>
-                        </button>
-                      );
-                    })}
+              {prestataires.length > 0 && (() => {
+                const deleguesIci = prestataires.filter((pr) => estDelegue(pr.id));
+                const resume = deleguesIci.length === 0 ? 'Déléguer ce parc' : `Délégué à ${deleguesIci.map((pr) => pr.company || pr.name).join(', ')}`;
+                return (
+                  <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, marginBottom: 16, overflow: 'hidden' }}>
+                    <button onClick={() => setDelegOpen((v) => !v)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, border: 'none', background: 'transparent', padding: '12px 14px', textAlign: 'left' }}>
+                      <Users size={17} color={deleguesIci.length ? c.amberDark : c.muted} style={{ flexShrink: 0 }} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: deleguesIci.length ? c.ink : c.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resume}</span>
+                      <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0, transform: delegOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+                    </button>
+                    {delegOpen && (
+                      <div style={{ padding: '2px 14px 14px', borderTop: `1px solid ${c.line}` }}>
+                        <div style={{ fontSize: 12, color: c.muted, margin: '11px 0 11px' }}>Un prestataire délégué pourra renseigner les pneus et saisir des interventions, sans modifier la liste des véhicules.</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {prestataires.map((pr) => {
+                            const on = estDelegue(pr.id);
+                            return (
+                              <button key={pr.id} onClick={() => onDelegToggle(pr.id, client, !on)} style={{ display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '10px 12px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
+                                <div style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amber : c.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={15} color="#fff" />}</div>
+                                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{pr.company || pr.name}</div>{pr.name && pr.company && <div style={{ fontSize: 12, color: c.muted }}>{pr.name}</div>}</div>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: on ? c.amberDark : c.muted, flexShrink: 0 }}>{on ? 'Délégué ✓' : 'Déléguer'}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 22 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Ajouter un véhicule</div>
                 <div style={{ display: 'flex', gap: 10 }}>
