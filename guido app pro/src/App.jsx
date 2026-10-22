@@ -717,6 +717,7 @@ async function forceRefresh() {
 
 /* ---- Pneus par véhicule (suivi de parc) ---- */
 const mapPneu = (r) => ({ id: r.id, vehiculeId: r.vehicule_id, clientId: r.client_id, essieu: r.essieu, pos: r.pos, marque: r.marque, dimension: r.dimension, profondeur: r.profondeur, etat: r.etat, nature: r.nature });
+const mapDeleg = (r) => ({ id: r.id, prestataireId: r.prestataire_id, clientId: r.client_id, clientNom: r.client_nom });
 
 /* Disposition d'essieux par défaut selon le type (modifiable ensuite) */
 const ESSIEUX_DEFAUT = {
@@ -1311,7 +1312,7 @@ function TyreTop({ pos, pneu, readOnly, onTap }) {
 }
 
 /* Écran détaillé d'un véhicule : ses pneus par essieu */
-function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = false, onBack, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
+function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = false, canConfig = true, onBack, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
   const essieux = essieuxDe(vehicule);
   const [slot, setSlot] = useState(null);
   const [bulkEssieu, setBulkEssieu] = useState(null);
@@ -1409,7 +1410,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
         )}
       </div>
 
-      {!readOnly && (
+      {!readOnly && canConfig && (
         <div style={{ marginTop: 22, paddingTop: 16, borderTop: `1px solid ${c.line}` }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Modifier la disposition</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1499,7 +1500,7 @@ function ParcClient({ vehicules = [], pneus = [], interventions = [], clientNom 
   );
 }
 
-function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
+function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions = [], delegations = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv, onDelegToggle }) {
   const clients = accounts.filter((a) => a.type === 'client' && parcClients.includes(a.id)).sort((a, b) => (a.company || '').localeCompare(b.company || ''));
   const [clientId, setClientId] = useState('');
   const [immat, setImmat] = useState('');
@@ -1513,6 +1514,8 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
   const liste = vehicules.filter((v) => v.clientId === clientId).sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
   const valid = clientId && immat.trim();
+  const prestataires = accounts.filter((a) => a.type === 'prestataire').sort((a, b) => (a.company || a.name || '').localeCompare(b.company || b.name || ''));
+  const estDelegue = (pid) => client && delegations.some((d) => d.prestataireId === pid && d.clientId === client.id);
 
   const ajouter = async () => {
     setBusy(true);
@@ -1579,6 +1582,24 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
 
           {client && mode === 'vehicules' && (
             <>
+              {prestataires.length > 0 && (
+                <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 4 }}>Déléguer ce parc à un prestataire</div>
+                  <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>Il pourra renseigner les pneus et saisir des interventions, sans modifier la liste des véhicules.</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {prestataires.map((pr) => {
+                      const on = estDelegue(pr.id);
+                      return (
+                        <button key={pr.id} onClick={() => onDelegToggle(pr.id, client, !on)} style={{ display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '10px 12px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
+                          <div style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amber : c.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={15} color="#fff" />}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{pr.company || pr.name}</div>{pr.name && pr.company && <div style={{ fontSize: 12, color: c.muted }}>{pr.name}</div>}</div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: on ? c.amberDark : c.muted, flexShrink: 0 }}>{on ? 'Délégué ✓' : 'Déléguer'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 22 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Ajouter un véhicule</div>
                 <div style={{ display: 'flex', gap: 10 }}>
@@ -1608,6 +1629,82 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                         </button>
                         <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Trash2 size={15} /></button>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* Suivi de parc côté prestataire (parcs délégués — pneus + interventions) */
+function ParcPrestataire({ vehicules = [], pneus = [], interventions = [], delegations = [], onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv }) {
+  const [clientId, setClientId] = useState('');
+  const [selVeh, setSelVeh] = useState(null);
+  const [q, setQ] = useState('');
+  const clients = delegations.map((d) => ({ id: d.clientId, nom: d.clientNom || '—' })).sort((a, b) => (a.nom || '').localeCompare(b.nom || ''));
+  const cid = clientId || (clients.length === 1 ? clients[0].id : '');
+
+  const vehic = selVeh ? vehicules.find((v) => v.id === selVeh) : null;
+  if (vehic) return (
+    <PneusVehicule vehicule={vehic} pneus={pneus.filter((p) => p.vehiculeId === vehic.id)}
+      interventions={interventions.filter((it) => it.vehiculeId === vehic.id)} canConfig={false}
+      onBack={() => setSelVeh(null)}
+      onSaveTyre={(fields) => onSaveTyre({ vehiculeId: vehic.id, clientId: vehic.clientId, ...fields })}
+      onDeleteTyre={onDeleteTyre}
+      onAddInterv={(f) => onAddInterv({ vehiculeId: vehic.id, clientId: vehic.clientId, ...f })}
+      onDeleteInterv={onDeleteInterv} />
+  );
+
+  const matches = vehicules.filter((v) => v.clientId === cid && normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
+
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: c.ink }}>Suivi de parc</h1>
+      <p style={{ margin: '0 0 18px', fontSize: 13.5, color: c.muted }}>Les parcs que Guido vous a confiés.</p>
+
+      {clients.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '44px 16px', background: c.surface, borderRadius: 16, border: `1px dashed ${c.line}`, lineHeight: 1.6 }}>
+          <Truck size={34} color={c.line} style={{ marginBottom: 10 }} /><br />
+          Aucun parc ne vous est confié pour le moment.
+        </div>
+      ) : (
+        <>
+          {clients.length > 1 && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}><Users size={14} color={c.muted} /> Client</label>
+              <select value={cid} onChange={(e) => setClientId(e.target.value)} style={fieldStyle}>
+                {clients.length > 1 && <option value="">Choisir un client…</option>}
+                {clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.nom}</option>)}
+              </select>
+            </div>
+          )}
+
+          {!cid ? (
+            <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '26px 12px' }}>Choisissez un client pour voir ses véhicules.</div>
+          ) : (
+            <>
+              <div style={{ position: 'relative', marginBottom: 12 }}>
+                <Search size={16} color={c.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                <input value={q} onChange={(e) => setQ(e.target.value.toUpperCase())} placeholder="Rechercher une immatriculation…" style={{ ...fieldStyle, paddingLeft: 36, textTransform: 'uppercase', letterSpacing: '0.04em' }} />
+                {q && <button onClick={() => setQ('')} aria-label="Effacer" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: c.paper, borderRadius: 8, padding: 5, display: 'flex' }}><X size={15} color={c.muted} /></button>}
+              </div>
+              {matches.length === 0 ? (
+                <div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '30px 12px', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>{q ? `Aucun véhicule ne correspond à « ${q} ».` : 'Aucun véhicule dans ce parc.'}</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {matches.map((v) => {
+                    const np = pneus.filter((p) => p.vehiculeId === v.id).length;
+                    return (
+                      <button key={v.id} onClick={() => setSelVeh(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 14, padding: '14px 15px', textAlign: 'left', width: '100%' }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 11, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={26} /></div>
+                        <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 5 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div></div>
+                        <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+                      </button>
                     );
                   })}
                 </div>
@@ -1883,15 +1980,17 @@ function PlanningClient({ rdv = [], conges = [], onRequest, onCancel }) {
   );
 }
 
-function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [], interventions = [], rdv = [], conges = [], onRdvRequest, onRdvCancel }) {
+function FieldShell({ user, children, onLogout, contact, factures = [], onFactureOpen, parcAutorise = false, vehicules = [], pneusVeh = [], interventions = [], rdv = [], conges = [], onRdvRequest, onRdvCancel, delegations = [], onPneuSave, onPneuDelete, onIntervAdd, onIntervDelete }) {
   const [view, setView] = useState('main');
   const [pwd, setPwd] = useState(false);
   const isClient = user.type === 'client';
+  const prestaParc = !isClient && delegations.length > 0;
   const navItems = [
     { k: 'main', label: 'Accueil', Icon: LayoutDashboard },
     ...(isClient ? [{ k: 'factures', label: 'Factures', Icon: FileText }] : []),
     ...(isClient && parcAutorise ? [{ k: 'parc', label: 'Mon parc', Icon: Truck }] : []),
     ...(isClient && parcAutorise ? [{ k: 'planning', label: 'Planning', Icon: Calendar }] : []),
+    ...(prestaParc ? [{ k: 'parc', label: 'Suivi de parc', Icon: Truck }] : []),
     { k: 'contact', label: 'Contact', Icon: Mail },
   ];
   return (
@@ -1911,7 +2010,7 @@ function FieldShell({ user, children, onLogout, contact, factures = [], onFactur
           </div>
           <div style={{ height: 5, marginLeft: -18, marginRight: -18, background: `repeating-linear-gradient(45deg, ${c.hazard} 0 14px, ${c.ink} 14px 28px)` }} />
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} clientNom={user.company} /> : view === 'planning' ? <PlanningClient rdv={rdv} conges={conges} onRequest={onRdvRequest} onCancel={onRdvCancel} /> : <ContactView contact={contact} />}</main>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>{view === 'main' ? children : view === 'factures' ? <FacturesClient factures={factures} onOpen={onFactureOpen} /> : view === 'parc' ? (isClient ? <ParcClient vehicules={vehicules} pneus={pneusVeh} interventions={interventions} clientNom={user.company} /> : <ParcPrestataire vehicules={vehicules} pneus={pneusVeh} interventions={interventions} delegations={delegations} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} />) : view === 'planning' ? <PlanningClient rdv={rdv} conges={conges} onRequest={onRdvRequest} onCancel={onRdvCancel} /> : <ContactView contact={contact} />}</main>
         <nav style={{ display: 'flex', borderTop: `1px solid ${c.line}`, background: c.surface }}>
           {navItems.map((t) => {
             const on = view === t.k;
@@ -2672,7 +2771,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete, rdv, conges, onRdvAdd, onRdvStatut, onRdvDelete, onCongeAdd, onCongeDelete }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete, rdv, conges, onRdvAdd, onRdvStatut, onRdvDelete, onCongeAdd, onCongeDelete, delegations, onDelegToggle }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -2719,7 +2818,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
-          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} interventions={interventions} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} />
+          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} interventions={interventions} delegations={delegations} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} onDelegToggle={onDelegToggle} />
           : tab === 'planning' ? <PlanningAdmin accounts={accounts} parcClients={parcClients} rdv={rdv} conges={conges} onRdvAdd={onRdvAdd} onRdvStatut={onRdvStatut} onRdvDelete={onRdvDelete} onCongeAdd={onCongeAdd} onCongeDelete={onCongeDelete} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
@@ -2752,6 +2851,7 @@ export default function App() {
   const [interventions, setInterventions] = useState([]);
   const [rdv, setRdv] = useState([]);
   const [conges, setConges] = useState([]);
+  const [delegations, setDelegations] = useState([]);
   const [invites, setInvites] = useState({});       // { accountId: inviteLink }
   const [alertMission, setAlertMission] = useState(null);
   const [alertsState, setAlertsState] = useState('off');
@@ -2919,9 +3019,9 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
-  /* Véhicules (admin : tous ; client : les siens via RLS) */
+  /* Véhicules (admin : tous ; client : les siens ; prestataire : parcs délégués — via RLS) */
   useEffect(() => {
-    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    if (!['admin', 'client', 'prestataire'].includes(profile?.type)) return;
     let active = true;
     const load = async () => {
       const { data } = await supabase.from('vehicules').select('*');
@@ -2934,9 +3034,9 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
-  /* Pneus par véhicule (admin : tous ; client : les siens via RLS) */
+  /* Pneus par véhicule (admin : tous ; client : les siens ; prestataire : parcs délégués — via RLS) */
   useEffect(() => {
-    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    if (!['admin', 'client', 'prestataire'].includes(profile?.type)) return;
     let active = true;
     const load = async () => {
       const { data } = await supabase.from('pneus_vehicule').select('*');
@@ -2949,9 +3049,9 @@ export default function App() {
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
 
-  /* Interventions (admin : toutes ; client : les siennes via RLS) */
+  /* Interventions (admin : toutes ; client : les siennes ; prestataire : parcs délégués — via RLS) */
   useEffect(() => {
-    if (profile?.type !== 'admin' && profile?.type !== 'client') return;
+    if (!['admin', 'client', 'prestataire'].includes(profile?.type)) return;
     let active = true;
     const load = async () => {
       const { data } = await supabase.from('interventions').select('*');
@@ -2960,6 +3060,21 @@ export default function App() {
     load();
     const ch = supabase.channel('interv-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, load)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
+  }, [profile]);
+
+  /* Délégations de parc (admin : toutes ; prestataire : les siennes via RLS) */
+  useEffect(() => {
+    if (profile?.type !== 'admin' && profile?.type !== 'prestataire') return;
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.from('delegations').select('*');
+      if (active && data) setDelegations(data.map(mapDeleg));
+    };
+    load();
+    const ch = supabase.channel('deleg-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'delegations' }, load)
       .subscribe();
     return () => { active = false; supabase.removeChannel(ch); };
   }, [profile]);
@@ -3153,6 +3268,15 @@ export default function App() {
     await supabase.from('conges').delete().eq('id', id);
     flash('Période supprimée');
   };
+  const delegToggle = async (prestataireId, client, on) => {
+    if (on) {
+      const { error } = await supabase.from('delegations').insert({ prestataire_id: prestataireId, client_id: client.id, client_nom: client.company });
+      if (error) flash('Erreur : ' + error.message); else flash('Parc délégué');
+    } else {
+      await supabase.from('delegations').delete().eq('prestataire_id', prestataireId).eq('client_id', client.id);
+      flash('Délégation retirée');
+    }
+  };
   /* Planning — client */
   const rdvRequest = async ({ date, moment, note }) => {
     const { error } = await supabase.from('rdv').insert({ client_id: profile.id, date, moment, note, statut: 'demande', origine: 'client' });
@@ -3206,7 +3330,8 @@ export default function App() {
       vehicules={vehicules} onVehiculeAdd={vehiculeAdd} onVehiculeDelete={vehiculeDelete}
       pneusVeh={pneusVeh} onPneuConfig={vehiculeConfigSave} onPneuSave={pneuSave} onPneuDelete={pneuDelete}
       interventions={interventions} onIntervAdd={intervAdd} onIntervDelete={intervDelete}
-      rdv={rdv} conges={conges} onRdvAdd={rdvAdd} onRdvStatut={rdvStatut} onRdvDelete={rdvDelete} onCongeAdd={congeAdd} onCongeDelete={congeDelete} />
+      rdv={rdv} conges={conges} onRdvAdd={rdvAdd} onRdvStatut={rdvStatut} onRdvDelete={rdvDelete} onCongeAdd={congeAdd} onCongeDelete={congeDelete}
+      delegations={delegations} onDelegToggle={delegToggle} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
@@ -3221,7 +3346,7 @@ export default function App() {
   return (
     <>
       <GlobalStyle />
-      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh} interventions={interventions} rdv={rdv} conges={conges} onRdvRequest={rdvRequest} onRdvCancel={rdvCancel}>
+      <FieldShell user={profile} onLogout={logout} contact={contact} factures={factures} onFactureOpen={factureOpen} parcAutorise={parcClients.includes(profile.id)} vehicules={vehicules} pneusVeh={pneusVeh} interventions={interventions} rdv={rdv} conges={conges} onRdvRequest={rdvRequest} onRdvCancel={rdvCancel} delegations={delegations} onPneuSave={pneuSave} onPneuDelete={pneuDelete} onIntervAdd={intervAdd} onIntervDelete={intervDelete}>
         {profile.type === 'client'
           ? <ClientView missions={missions} onSend={createMission} stock={stock.filter((s) => clientStock.some((r) => r.stock_id === s.id))} onEnableAlerts={enableAlerts} alertsState={alertsState} champs={champsConfig[profile.id] || []} />
           : <PrestataireView missions={missions} onAdvance={advance} alertMission={alertMission} onDismissAlert={() => setAlertMission(null)} onEnableAlerts={enableAlerts} alertsState={alertsState} />}
