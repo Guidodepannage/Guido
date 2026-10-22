@@ -1361,9 +1361,9 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
               <React.Fragment key={num}>
                 <div style={{ width: 12, height: 20, background: c.asphalt }} />
                 {readOnly ? (
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: c.muted, marginBottom: 7 }}>Essieu {num}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: c.muted, marginBottom: 8 }}>Essieu {num}</div>
                 ) : (
-                  <button onClick={() => setBulkEssieu(num)} style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1px solid ${c.line}`, background: c.paper, color: c.ink, borderRadius: 999, padding: '3px 11px', fontSize: 10.5, fontWeight: 800, marginBottom: 7, letterSpacing: '0.02em' }}>Essieu {num} <Pencil size={10} color={c.muted} /></button>
+                  <button onClick={() => setBulkEssieu(num)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, border: `1.5px solid ${c.line}`, background: c.paper, color: c.ink, borderRadius: 10, padding: '9px 18px', fontSize: 12.5, fontWeight: 800, marginBottom: 9, minWidth: 180 }}><Pencil size={13} color={c.amber} /> Essieu {num} · renseigner</button>
                 )}
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
                   <div style={{ position: 'absolute', left: '13%', right: '13%', height: 7, background: c.asphalt, borderRadius: 4, zIndex: 0 }} />
@@ -1381,7 +1381,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
             {ETAT_LIST.map(([v, lab]) => <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: c.muted, fontWeight: 600 }}><span style={{ width: 9, height: 9, borderRadius: 999, background: ETAT_PNEU[v].dot }} />{lab}</span>)}
           </div>
           <div style={{ textAlign: 'center', fontSize: 11, color: c.muted, marginTop: 9, lineHeight: 1.4 }}>
-            Le chiffre = profondeur (mm).{readOnly ? ' Touchez un pneu pour voir le détail.' : ' Touchez un pneu pour le renseigner.'}
+            Le chiffre = profondeur (mm).{readOnly ? ' Touchez un pneu pour voir le détail.' : ' Touchez un pneu, ou « Essieu N » pour renseigner tous ses pneus.'}
           </div>
         </div>
       )}
@@ -1416,6 +1416,21 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
           onSave={(fields) => onSaveTyre({ essieu: slot.essieu, pos: slot.pos, ...fields })}
           onClear={() => slot.data && onDeleteTyre(slot.data)} />
       )}
+      {bulkEssieu && (() => {
+        const positions = posDe(essieux[bulkEssieu - 1] || 'simple').map((p) => p.code);
+        return <PneuForm slot={{ essieu: bulkEssieu, lib: 'tous les pneus' }} bulk onClose={() => setBulkEssieu(null)}
+          onSave={async (fields) => { for (const pos of positions) await onSaveTyre({ essieu: bulkEssieu, pos, ...fields }); }} />;
+      })()}
+      {inspect && (() => {
+        const cur = inspect.list[inspect.idx];
+        const s = { ...cur, data: pneuAt(cur.essieu, cur.pos) };
+        const next = () => setInspect((v) => (v.idx + 1 < v.list.length ? { ...v, idx: v.idx + 1 } : null));
+        const prev = () => setInspect((v) => (v.idx > 0 ? { ...v, idx: v.idx - 1 } : v));
+        return <PneuForm key={`${cur.essieu}-${cur.pos}`} slot={s} inspect={{ idx: inspect.idx, total: inspect.list.length }}
+          onClose={() => setInspect(null)}
+          onSave={(fields) => onSaveTyre({ essieu: cur.essieu, pos: cur.pos, ...fields })}
+          onNext={next} onPrev={prev} />;
+      })()}
       {intervOpen && <IntervForm vehicule={vehicule} onClose={() => setIntervOpen(false)} onSave={(f) => onAddInterv(f)} />}
     </div>
   );
