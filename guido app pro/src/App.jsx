@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
   Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
-  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX, RefreshCw
+  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -1509,7 +1509,8 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [selVeh, setSelVeh] = useState(null);
   const [mode, setMode] = useState('vehicules');
   const [q, setQ] = useState('');
-  const [delegOpen, setDelegOpen] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [sheet, setSheet] = useState(null);
   const client = clients.find((cl) => cl.id === clientId);
   const nomClientParc = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
   const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
@@ -1575,58 +1576,34 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
             </select>
           </div>
 
-          {client && <Seg value={mode} onChange={setMode} options={[['vehicules', 'Véhicules'], ['rapports', 'Rapports']]} />}
-
           {client && mode === 'rapports' && (
-            <RapportsJour vehicules={liste} interventions={interventions.filter((it) => it.clientId === client.id)} clientNom={client.company} />
+            <>
+              <button onClick={() => setMode('vehicules')} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Retour au parc</button>
+              <RapportsJour vehicules={liste} interventions={interventions.filter((it) => it.clientId === client.id)} clientNom={client.company} />
+            </>
           )}
 
           {client && mode === 'vehicules' && (
             <>
-              {prestataires.length > 0 && (() => {
-                const deleguesIci = prestataires.filter((pr) => estDelegue(pr.id));
-                const resume = deleguesIci.length === 0 ? 'Déléguer ce parc' : `Délégué à ${deleguesIci.map((pr) => pr.company || pr.name).join(', ')}`;
-                return (
-                  <div style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, marginBottom: 16, overflow: 'hidden' }}>
-                    <button onClick={() => setDelegOpen((v) => !v)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, border: 'none', background: 'transparent', padding: '12px 14px', textAlign: 'left' }}>
-                      <Users size={17} color={deleguesIci.length ? c.amberDark : c.muted} style={{ flexShrink: 0 }} />
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: deleguesIci.length ? c.ink : c.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resume}</span>
-                      <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0, transform: delegOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
-                    </button>
-                    {delegOpen && (
-                      <div style={{ padding: '2px 14px 14px', borderTop: `1px solid ${c.line}` }}>
-                        <div style={{ fontSize: 12, color: c.muted, margin: '11px 0 11px' }}>Un prestataire délégué pourra renseigner les pneus et saisir des interventions, sans modifier la liste des véhicules.</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {prestataires.map((pr) => {
-                            const on = estDelegue(pr.id);
-                            return (
-                              <button key={pr.id} onClick={() => onDelegToggle(pr.id, client, !on)} style={{ display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '10px 12px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
-                                <div style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amber : c.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={15} color="#fff" />}</div>
-                                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{pr.company || pr.name}</div>{pr.name && pr.company && <div style={{ fontSize: 12, color: c.muted }}>{pr.name}</div>}</div>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: on ? c.amberDark : c.muted, flexShrink: 0 }}>{on ? 'Délégué ✓' : 'Déléguer'}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 13, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 16, padding: 16, marginBottom: 22 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Ajouter un véhicule</div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <div style={{ flex: 1 }}><label style={labelStyle}>Immatriculation</label>
-                    <input style={{ ...fieldStyle, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'ui-monospace, Menlo, monospace' }} value={immat} onChange={(e) => setImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
-                  <div style={{ flex: 1 }}><label style={labelStyle}>Type</label>
-                    <select style={fieldStyle} value={vtype} onChange={(e) => setVtype(e.target.value)}>
-                      {VEHIC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select></div>
-                </div>
-                <button onClick={ajouter} disabled={!valid || busy} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 14.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Plus size={17} /> {busy ? 'Ajout…' : 'Ajouter au parc'}</button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13, position: 'relative' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parc de {client.company} ({liste.length})</div>
+                <button onClick={() => setMenu((v) => !v)} aria-label="Actions" style={{ border: `1px solid ${c.line}`, background: c.surface, borderRadius: 10, padding: '7px 9px', display: 'flex', color: c.ink }}><MoreVertical size={18} /></button>
+                {menu && (
+                  <>
+                    <div onClick={() => setMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                    <div className="pop" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 50, minWidth: 236, overflow: 'hidden' }}>
+                      {[
+                        ...(prestataires.length > 0 ? [{ k: 'deleg', Icon: Users, label: 'Déléguer la gestion du parc' }] : []),
+                        { k: 'add', Icon: Plus, label: 'Ajouter un véhicule' },
+                        { k: 'rapport', Icon: ClipboardList, label: 'Rapport' },
+                      ].map(({ k, Icon, label }, i, arr) => (
+                        <button key={k} onClick={() => { setMenu(false); if (k === 'rapport') setMode('rapports'); else setSheet(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', border: 'none', background: 'transparent', padding: '12px 14px', fontSize: 14, fontWeight: 600, color: c.ink, textAlign: 'left', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' }}><Icon size={17} color={c.muted} /> {label}</button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Parc de {client.company} ({liste.length})</div>
               {liste.length === 0 ? (
                 <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0' }}>Aucun véhicule pour ce client.</div>
               ) : (
@@ -1644,6 +1621,48 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {sheet === 'add' && (
+                <div onClick={() => setSheet(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+                  <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Ajouter un véhicule</div>
+                      <button onClick={() => setSheet(null)} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                      <div style={{ flex: 1 }}><label style={labelStyle}>Immatriculation</label>
+                        <input style={{ ...fieldStyle, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'ui-monospace, Menlo, monospace' }} value={immat} onChange={(e) => setImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
+                      <div style={{ flex: 1 }}><label style={labelStyle}>Type</label>
+                        <select style={fieldStyle} value={vtype} onChange={(e) => setVtype(e.target.value)}>{VEHIC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+                    </div>
+                    <button onClick={async () => { await ajouter(); setSheet(null); }} disabled={!valid || busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: valid && !busy ? c.amber : c.line, color: valid && !busy ? '#fff' : c.muted, fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Plus size={17} /> {busy ? 'Ajout…' : 'Ajouter au parc'}</button>
+                  </div>
+                </div>
+              )}
+
+              {sheet === 'deleg' && (
+                <div onClick={() => setSheet(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+                  <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '88dvh', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Déléguer la gestion du parc</div>
+                      <button onClick={() => setSheet(null)} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: c.muted, marginBottom: 14, lineHeight: 1.45 }}>Le prestataire choisi pourra renseigner les pneus et saisir des interventions sur ce parc, sans modifier la liste des véhicules ni voir vos autres clients.</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {prestataires.map((pr) => {
+                        const on = estDelegue(pr.id);
+                        return (
+                          <button key={pr.id} onClick={() => onDelegToggle(pr.id, client, !on)} style={{ display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', padding: '11px 12px', borderRadius: 11, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amberSoft : c.surface }}>
+                            <div style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? c.amber : c.line}`, background: on ? c.amber : c.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on && <Check size={15} color="#fff" />}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: c.ink }}>{pr.company || pr.name}</div>{pr.name && pr.company && <div style={{ fontSize: 12, color: c.muted }}>{pr.name}</div>}</div>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: on ? c.amberDark : c.muted, flexShrink: 0 }}>{on ? 'Délégué ✓' : 'Déléguer'}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
             </>
