@@ -747,6 +747,13 @@ const ETAT_LIST = [['neuf', 'Neuf'], ['bon', 'Bon'], ['surveiller', 'À surveill
 const NATURE_LIST = [['neuf', 'Neuf'], ['recreuse', 'Recreusé'], ['rechape', 'Réchappé'], ['rechape_recreuse', 'Réchappé + recreusé']];
 const NATURE_LABEL = Object.fromEntries(NATURE_LIST);
 const MARQUES_PL = ['Michelin', 'Continental', 'Bridgestone', 'Goodyear', 'Hankook', 'Pirelli', 'Dunlop', 'Firestone', 'Barum', 'Kormoran', 'Recamic', 'Bandvulc', 'Insa Turbo', 'Autre'];
+/* Dimensions poids lourd courantes (suggestions — toute autre valeur reste saisissable) */
+const DIMENSIONS_PL = [
+  '315/80 R22.5', '315/70 R22.5', '315/60 R22.5', '295/80 R22.5', '295/60 R22.5', '275/70 R22.5',
+  '385/65 R22.5', '385/55 R22.5', '445/65 R22.5', '425/65 R22.5', '13 R22.5', '12 R22.5', '11 R22.5',
+  '245/70 R19.5', '265/70 R19.5', '285/70 R19.5', '435/50 R19.5', '385/55 R19.5',
+  '205/75 R17.5', '215/75 R17.5', '225/75 R17.5', '235/75 R17.5', '245/70 R17.5',
+];
 
 /* ---- Interventions (historique par véhicule) ---- */
 const INTERV_TYPES = [['recreusage', 'Recreusage'], ['permutation', 'Permutation'], ['changement', 'Changement'], ['reparation', 'Réparation'], ['autre', 'Autre']];
@@ -904,7 +911,8 @@ function IntervForm({ vehicule, onClose, onSave }) {
             <datalist id="marques-pl">{MARQUES_PL.map((m) => <option key={m} value={m} />)}</datalist>
             <div style={{ display: 'flex', gap: 10 }}>
               <div style={{ flex: 1 }}><label style={labelStyle}>Dimension</label>
-                <select value={dimension} onChange={(e) => setDimension(e.target.value)} style={fieldStyle}><option value="">—</option>{POS_TYPES.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
+                <input list="dim-pl" value={dimension} onChange={(e) => setDimension(e.target.value.toUpperCase())} placeholder="Ex. 315/70 R22.5" style={{ ...fieldStyle, textTransform: 'uppercase' }} />
+                <datalist id="dim-pl">{DIMENSIONS_PL.map((d) => <option key={d} value={d} />)}</datalist></div>
               <div style={{ width: 120 }}><label style={labelStyle}>Profondeur</label>
                 <div style={{ position: 'relative' }}><input type="number" step="0.5" value={profPose} onChange={(e) => setProfPose(e.target.value)} placeholder="14" style={{ ...fieldStyle, paddingRight: 34 }} /><span style={{ position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: c.muted, fontWeight: 600 }}>mm</span></div></div>
             </div>
@@ -1239,10 +1247,8 @@ function PneuForm({ slot, interventions = [], readOnly = false, bulk = false, in
         <div style={{ display: 'flex', gap: 10, marginBottom: 13 }}>
           <div style={{ flex: 1 }}>
             <label style={labelStyle}>Dimension</label>
-            <select value={dimension} onChange={(e) => setDimension(e.target.value)} style={fieldStyle}>
-              <option value="">—</option>
-              {POS_TYPES.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+            <input list="dim-pl" value={dimension} onChange={(e) => setDimension(e.target.value.toUpperCase())} placeholder="Ex. 315/70 R22.5" style={{ ...fieldStyle, textTransform: 'uppercase' }} />
+            <datalist id="dim-pl">{DIMENSIONS_PL.map((d) => <option key={d} value={d} />)}</datalist>
           </div>
           <div style={{ width: 120 }}>
             <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 5 }}><Gauge size={13} color={c.muted} /> Gomme</label>
