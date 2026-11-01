@@ -1088,6 +1088,115 @@ async function downloadRapportPDF({ clientNom, jour, items, vById }) {
   doc.save(`rapport-${jour}.pdf`);
 }
 
+/* Anomalies d'un véhicule : essieux avec marques différentes ou écart de gomme ≥ 5 mm */
+function anomaliesVehicule(vehicule, pneusV) {
+  const res = [];
+  essieuxDe(vehicule).forEach((type, i) => {
+    const num = i + 1;
+    const tyres = posDe(type).map((p) => pneusV.find((x) => x.essieu === num && x.pos === p.code)).filter(Boolean);
+    const marques = [...new Set(tyres.map((t) => (t.marque || '').trim().toLowerCase()).filter(Boolean))];
+    const profs = tyres.map((t) => t.profondeur).filter((v) => v != null);
+    const marqueDiff = marques.length > 1;
+    const gommeDiff = profs.length >= 2 && (Math.max(...profs) - Math.min(...profs)) >= 5;
+    if (marqueDiff || gommeDiff) res.push({ num, marqueDiff, gommeDiff });
+  });
+  return res;
+}
+
+/* Télécharge le bilan « état des pneus » d'un parc en PDF */
+async function downloadBilanPDF({ clientNom, vehicules, pneus }) {
+  await loadJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdfTxt = (s) => String(s == null ? '' : s).replace(/[   ]/g, ' ').replace(/→/g, '->').replace(/—/g, '-').replace(/’/g, "'").replace(/œ/g, 'oe').replace(/≥/g, '>=');
+  const vlist = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
+  let totAno = 0, totCh = 0;
+  const body = vlist.map((v) => {
+    const pv = pneus.filter((p) => p.vehiculeId === v.id);
+    const total = essieuxDe(v).reduce((n, t) => n + posDe(t).length, 0);
+    const aCh = pv.filter((p) => p.etat === 'changer').length;
+    const aSu = pv.filter((p) => p.etat === 'surveiller').length;
+    const anos = anomaliesVehicule(v, pv);
+    totAno += anos.length; totCh += aCh;
+    const anoTxt = anos.length ? anos.map((a) => `E${a.num} ${[a.marqueDiff && 'marques diff.', a.gommeDiff && 'gomme >=5mm'].filter(Boolean).join(' + ')}`).join(' ; ') : 'RAS';
+    return [pdfTxt(`${v.immat || '—'}\n${v.vtype || ''}`), `${pv.length}/${total}`, aSu ? String(aSu) : '-', aCh ? String(aCh) : '-', pdfTxt(anoTxt)];
+  });
+  const genere = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(16, 35, 60); doc.text('GUIDO', 14, 18);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(108, 113, 120); doc.text("BILAN ETAT DES PNEUS", 14, 23.5);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(12, 26, 46); doc.text(pdfTxt(clientNom || '—'), 196, 15.5, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(108, 113, 120);
+  doc.text(`${vlist.length} vehicule(s) - ${totAno} essieu(x) a verifier - ${totCh} pneu(s) a changer`, 196, 20.5, { align: 'right' });
+  doc.text('Edite le ' + genere, 196, 25, { align: 'right' });
+  doc.setDrawColor(16, 35, 60); doc.setLineWidth(0.6); doc.line(14, 29, 196, 29);
+  doc.autoTable({
+    startY: 33,
+    head: [['Vehicule', 'Pneus', 'A surveiller', 'A changer', 'Anomalies essieu']],
+    body,
+    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, textColor: [12, 26, 46], lineColor: [230, 228, 223], lineWidth: 0.1, valign: 'top' },
+    headStyles: { fillColor: [16, 35, 60], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [247, 247, 245] },
+    columnStyles: { 0: { cellWidth: 30 }, 1: { cellWidth: 16, halign: 'center' }, 2: { cellWidth: 23, halign: 'center' }, 3: { cellWidth: 20, halign: 'center' } },
+    margin: { left: 14, right: 14 },
+  });
+  const y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 8;
+  doc.setFontSize(8); doc.setTextColor(108, 113, 120);
+  doc.text(pdfTxt('Anomalie = marques differentes ou ecart de gomme >= 5 mm sur un meme essieu. Document genere via Guido.'), 105, y, { align: 'center' });
+  doc.save(`bilan-pneus-${todayISO()}.pdf`);
+}
+
+/* Bilan « état des pneus » d'un parc (anomalies, à changer) — consultable + export PDF */
+function BilanPneus({ clientNom = '', vehicules = [], pneus = [], onBack, onOpen }) {
+  const [exporting, setExporting] = useState(false);
+  const vlist = [...vehicules].sort((a, b) => (a.immat || '').localeCompare(b.immat || ''));
+  const infoV = (v) => {
+    const pv = pneus.filter((p) => p.vehiculeId === v.id);
+    const total = essieuxDe(v).reduce((n, t) => n + posDe(t).length, 0);
+    return { pv, total, aCh: pv.filter((p) => p.etat === 'changer').length, aSu: pv.filter((p) => p.etat === 'surveiller').length, anos: anomaliesVehicule(v, pv) };
+  };
+  const nbAno = vlist.reduce((n, v) => n + infoV(v).anos.length, 0);
+  const nbCh = pneus.filter((p) => p.etat === 'changer').length;
+  const exporter = async () => { setExporting(true); try { await downloadBilanPDF({ clientNom, vehicules: vlist, pneus }); } catch (e) {} setExporting(false); };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Retour au parc</button>
+      <div style={{ background: c.asphalt, color: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 12 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }}>Bilan état des pneus</div>
+        <div style={{ fontSize: 18, fontWeight: 800, marginTop: 3 }}>{clientNom || '—'}</div>
+        <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{vlist.length} véhicule{vlist.length > 1 ? 's' : ''} · {nbAno} essieu{nbAno > 1 ? 'x' : ''} à vérifier · {nbCh} pneu{nbCh > 1 ? 's' : ''} à changer</div>
+      </div>
+      <button onClick={exporter} disabled={exporting || vlist.length === 0} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1.5px solid ${c.amber}`, background: (exporting || vlist.length === 0) ? c.line : c.amberSoft, color: (exporting || vlist.length === 0) ? c.muted : c.amberDark, fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }}><Download size={17} /> {exporting ? 'Préparation du PDF…' : 'Télécharger le bilan en PDF'}</button>
+
+      {vlist.length === 0 ? (
+        <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 12px', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>Aucun véhicule dans ce parc.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {vlist.map((v) => {
+            const info = infoV(v);
+            const ok = info.anos.length === 0 && info.aCh === 0 && info.aSu === 0;
+            return (
+              <button key={v.id} onClick={() => onOpen && onOpen(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, background: c.surface, border: `1px solid ${info.anos.length || info.aCh ? c.amber : c.line}`, borderRadius: 14, padding: '12px 14px', textAlign: 'left', width: '100%' }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Plate value={v.immat} />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                    {info.anos.length > 0 && <span style={{ background: c.amberSoft, color: c.amberDark, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>⚠ {info.anos.length} essieu{info.anos.length > 1 ? 'x' : ''} à vérifier</span>}
+                    {info.aCh > 0 && <span style={{ background: c.redSoft, color: c.red, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{info.aCh} à changer</span>}
+                    {info.aSu > 0 && <span style={{ background: c.amberSoft, color: c.amberDark, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{info.aSu} à surveiller</span>}
+                    {ok && <span style={{ background: c.greenSoft, color: c.green, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>Conforme</span>}
+                  </div>
+                </div>
+                <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Rapports par jour : les interventions d'un parc regroupées par journée */
 function RapportsJour({ vehicules = [], interventions = [], clientNom = '' }) {
   const [jour, setJour] = useState(null);
@@ -1330,6 +1439,16 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
   const total = essieux.reduce((n, t) => n + posDe(t).length, 0);
   const remplis = pneus.length;
   const aChanger = pneus.filter((p) => p.etat === 'changer').length;
+  /* Alerte par essieu : marques différentes OU écart de gomme ≥ 5 mm entre ses pneus */
+  const essieuAlerte = (num, type) => {
+    const tyres = posDe(type).map((p) => pneuAt(num, p.code)).filter(Boolean);
+    const marques = [...new Set(tyres.map((t) => (t.marque || '').trim().toLowerCase()).filter(Boolean))];
+    const profs = tyres.map((t) => t.profondeur).filter((v) => v != null);
+    const marqueDiff = marques.length > 1;
+    const gommeDiff = profs.length >= 2 && (Math.max(...profs) - Math.min(...profs)) >= 5;
+    return { marqueDiff, gommeDiff, any: marqueDiff || gommeDiff };
+  };
+  const nbEssieuxAlerte = essieux.reduce((n, t, i) => n + (essieuAlerte(i + 1, t).any ? 1 : 0), 0);
 
   const addEssieu = (type) => onSaveConfig([...essieux, type]);
   const removeLast = () => {
@@ -1349,6 +1468,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c.paper, border: `1px solid ${c.line}`, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700, color: c.ink }}><CircleDot size={13} color={c.muted} /> {remplis}/{total} pneus renseignés</span>
         {aChanger > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c.redSoft, color: c.red, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700 }}><AlertTriangle size={13} /> {aChanger} à changer</span>}
+        {nbEssieuxAlerte > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: c.amberSoft, color: c.amberDark, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 700 }}><AlertTriangle size={13} /> {nbEssieuxAlerte} essieu{nbEssieuxAlerte > 1 ? 'x' : ''} à vérifier</span>}
       </div>
 
       {!readOnly && essieux.length > 0 && (
@@ -1373,13 +1493,14 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
               <TyreTop key={pos.code} pos={pos} pneu={pneuAt(num, pos.code)} readOnly={readOnly}
                 onTap={() => setSlot({ essieu: num, pos: pos.code, lib: pos.lib, data: pneuAt(num, pos.code) })} />
             );
+            const al = essieuAlerte(num, type);
             return (
               <React.Fragment key={num}>
                 <div style={{ width: 12, height: 20, background: c.asphalt }} />
                 {readOnly ? (
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: c.muted, marginBottom: 8 }}>Essieu {num}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: al.any ? c.amberDark : c.muted, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>{al.any && <AlertTriangle size={12} color={c.amberDark} />}Essieu {num}</div>
                 ) : (
-                  <button onClick={() => setBulkEssieu(num)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, border: `1.5px solid ${c.line}`, background: c.paper, color: c.ink, borderRadius: 10, padding: '9px 18px', fontSize: 12.5, fontWeight: 800, marginBottom: 9, minWidth: 180 }}><Pencil size={13} color={c.amber} /> Essieu {num} · renseigner</button>
+                  <button onClick={() => setBulkEssieu(num)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, border: `1.5px solid ${al.any ? c.amber : c.line}`, background: al.any ? c.amberSoft : c.paper, color: c.ink, borderRadius: 10, padding: '9px 18px', fontSize: 12.5, fontWeight: 800, marginBottom: 9, minWidth: 180 }}>{al.any ? <AlertTriangle size={13} color={c.amberDark} /> : <Pencil size={13} color={c.amber} />} Essieu {num} · renseigner</button>
                 )}
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
                   <div style={{ position: 'absolute', left: '13%', right: '13%', height: 7, background: c.asphalt, borderRadius: 4, zIndex: 0 }} />
@@ -1387,6 +1508,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
                   <div style={{ width: 15, height: 15, borderRadius: 4, background: c.asphalt, margin: '0 12px', zIndex: 1, flexShrink: 0 }} />
                   <div style={{ display: 'flex', gap: 6, zIndex: 1 }}>{right.map(tyre)}</div>
                 </div>
+                {al.any && <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: c.amberSoft, color: c.amberDark, borderRadius: 8, padding: '4px 9px', fontSize: 10.5, fontWeight: 700, marginTop: 7, textAlign: 'center', maxWidth: 280, lineHeight: 1.35 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {[al.marqueDiff && 'marques différentes', al.gommeDiff && 'écart de gomme ≥ 5 mm'].filter(Boolean).join(' · ')}</div>}
               </React.Fragment>
             );
           })}
@@ -1589,6 +1711,10 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
             </>
           )}
 
+          {client && mode === 'bilan' && (
+            <BilanPneus clientNom={client.company} vehicules={liste} pneus={pneus.filter((p) => p.clientId === client.id)} onBack={() => setMode('vehicules')} onOpen={(id) => { setSelVeh(id); setMode('vehicules'); }} />
+          )}
+
           {client && mode === 'vehicules' && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13, position: 'relative' }}>
@@ -1601,9 +1727,10 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                       {[
                         ...(prestataires.length > 0 ? [{ k: 'deleg', Icon: Users, label: 'Déléguer la gestion du parc' }] : []),
                         { k: 'add', Icon: Plus, label: 'Ajouter un véhicule' },
-                        { k: 'rapport', Icon: ClipboardList, label: 'Rapport' },
+                        { k: 'bilan', Icon: AlertTriangle, label: 'Bilan état des pneus' },
+                        { k: 'rapport', Icon: ClipboardList, label: 'Rapport d\'interventions' },
                       ].map(({ k, Icon, label }, i, arr) => (
-                        <button key={k} onClick={() => { setMenu(false); if (k === 'rapport') setMode('rapports'); else setSheet(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', border: 'none', background: 'transparent', padding: '12px 14px', fontSize: 14, fontWeight: 600, color: c.ink, textAlign: 'left', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' }}><Icon size={17} color={c.muted} /> {label}</button>
+                        <button key={k} onClick={() => { setMenu(false); if (k === 'rapport') setMode('rapports'); else if (k === 'bilan') setMode('bilan'); else setSheet(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', border: 'none', background: 'transparent', padding: '12px 14px', fontSize: 14, fontWeight: 600, color: c.ink, textAlign: 'left', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' }}><Icon size={17} color={c.muted} /> {label}</button>
                       ))}
                     </div>
                   </>
