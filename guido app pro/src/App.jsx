@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
   Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
-  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical
+  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical, Shuffle, ArrowRight
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -1103,6 +1103,129 @@ function anomaliesVehicule(vehicule, pneusV) {
   return res;
 }
 
+/* Optimisation : meilleure répartition d'un groupe d'essieux de même dimension
+   (une seule marque par essieu, écart de gomme minimal). Renvoie null si incompatible. */
+function _optimDimGroup(axles, tyres) {
+  const norm = (m) => (m || '').trim().toLowerCase();
+  const brands = [...new Set(tyres.map((t) => norm(t.marque)))];
+  const byBrand = {};
+  brands.forEach((b) => { byBrand[b] = tyres.filter((t) => norm(t.marque) === b).slice().sort((x, y) => (x.profondeur ?? 1e9) - (y.profondeur ?? 1e9)); });
+  let best = null;
+  const n = axles.length;
+  const assign = new Array(n);
+  const rec = (i) => {
+    if (i === n) {
+      const need = {}; axles.forEach((ax, k) => { need[assign[k]] = (need[assign[k]] || 0) + ax.positions.length; });
+      for (const b of brands) if ((need[b] || 0) !== byBrand[b].length) return;
+      const pool = {}; brands.forEach((b) => { pool[b] = byBrand[b].slice(); });
+      const placement = []; let viol = 0, spread = 0;
+      axles.forEach((ax, k) => {
+        const grp = pool[assign[k]].splice(0, ax.positions.length);
+        const profs = grp.map((t) => t.profondeur).filter((v) => v != null);
+        const sp = profs.length >= 2 ? Math.max(...profs) - Math.min(...profs) : 0;
+        if (sp > 5) viol++; spread += sp;
+        ax.positions.forEach((pos, j) => placement.push({ essieu: ax.num, pos, tyre: grp[j] }));
+      });
+      const score = viol * 1000 + spread;
+      if (!best || score < best.score) best = { score, placement, viol };
+      return;
+    }
+    for (const b of brands) { assign[i] = b; rec(i + 1); }
+  };
+  rec(0);
+  return best;
+}
+
+/* Analyse un véhicule et propose des permutations (même dimension uniquement) */
+function optimiserVehicule(vehicule, pneusV) {
+  const essieux = essieuxDe(vehicule);
+  const axles = essieux.map((type, i) => {
+    const num = i + 1; const positions = posDe(type).map((p) => p.code);
+    const tyres = positions.map((code) => pneusV.find((p) => p.essieu === num && p.pos === code)).filter(Boolean);
+    const dims = [...new Set(tyres.map((t) => (t.dimension || '').trim()).filter(Boolean))];
+    return { num, type, positions, tyres, full: tyres.length === positions.length, dim: dims.length === 1 ? dims[0] : (dims.length === 0 ? '' : null) };
+  });
+  const problems = [];
+  const optimizable = axles.filter((a) => {
+    if (!a.full) return false;
+    if (a.dim === null) { problems.push(`Essieu ${a.num} : dimensions mélangées (non optimisé)`); return false; }
+    if (!a.dim) return false;
+    return true;
+  });
+  const groups = {};
+  optimizable.forEach((a) => { (groups[a.dim] = groups[a.dim] || []).push(a); });
+  const targetByPos = new Map();
+  Object.entries(groups).forEach(([dim, axs]) => {
+    const tyres = axs.flatMap((a) => a.tyres);
+    const best = _optimDimGroup(axs.map((a) => ({ num: a.num, positions: a.positions })), tyres);
+    if (!best) {
+      problems.push(`Dimension ${dim} : impossible de garder une seule marque par essieu avec ces pneus`);
+      axs.forEach((a) => a.positions.forEach((pos) => { const cur = a.tyres.find((t) => t.pos === pos); if (cur) targetByPos.set(`${a.num}-${pos}`, cur); }));
+      return;
+    }
+    best.placement.forEach((pl) => targetByPos.set(`${pl.essieu}-${pl.pos}`, pl.tyre));
+  });
+  pneusV.forEach((p) => { const key = `${p.essieu}-${p.pos}`; if (!targetByPos.has(key)) targetByPos.set(key, p); });
+  const tgtOf = new Map();
+  targetByPos.forEach((tyre, key) => { if (tyre) { const [e, pos] = key.split('-'); tgtOf.set(tyre.id, { essieu: Number(e), pos }); } });
+  const moves = [];
+  pneusV.forEach((p) => { const to = tgtOf.get(p.id); if (to && (to.essieu !== p.essieu || to.pos !== p.pos)) moves.push({ tyre: p, from: { essieu: p.essieu, pos: p.pos }, to }); });
+  const avantAno = anomaliesVehicule(vehicule, pneusV).length;
+  const simulated = pneusV.map((p) => { const to = tgtOf.get(p.id) || { essieu: p.essieu, pos: p.pos }; return { ...p, essieu: to.essieu, pos: to.pos }; });
+  const apresAno = anomaliesVehicule(vehicule, simulated).length;
+  return { moves, targetByPos, avantAno, apresAno, problems };
+}
+
+/* Modale d'optimisation des positions de pneus */
+function OptimModal({ vehicule, pneus, onClose, onApply }) {
+  const [busy, setBusy] = useState(false);
+  const res = optimiserVehicule(vehicule, pneus);
+  const empl = (x) => `E${x.essieu} · ${POS_LIB[x.pos] || x.pos}`;
+  const apply = async () => { setBusy(true); await onApply(res.targetByPos); setBusy(false); onClose(); };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} className="pop" style={{ width: '100%', maxWidth: 452, background: c.surface, borderRadius: '18px 18px 0 0', padding: '18px 18px 24px', maxHeight: '92dvh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Optimiser les positions</div>
+          <button onClick={onClose} aria-label="Fermer" style={{ border: 'none', background: c.paper, borderRadius: 9, padding: 7, display: 'flex' }}><X size={17} color={c.muted} /></button>
+        </div>
+
+        {res.moves.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '10px 4px 18px' }}>
+            {res.avantAno === 0
+              ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: c.green }}><CheckCircle2 size={34} /><div style={{ fontSize: 14.5, fontWeight: 700, color: c.ink }}>Rien à optimiser</div><div style={{ fontSize: 13, color: c.muted, lineHeight: 1.5 }}>Chaque essieu est déjà conforme : une seule marque et un écart de gomme ≤ 5 mm.</div></div>
+              : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}><AlertTriangle size={32} color={c.amberDark} /><div style={{ fontSize: 14, color: c.ink, fontWeight: 700 }}>Aucune permutation n'améliore la situation</div><div style={{ fontSize: 13, color: c.muted, lineHeight: 1.5 }}>Les pneus actuels ne permettent pas de respecter la règle (même marque + écart ≤ 5 mm) rien qu'en les déplaçant.</div></div>}
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: c.paper, borderRadius: 12, padding: '11px', marginBottom: 14 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: c.red }}>{res.avantAno} à vérifier</span>
+              <ArrowRight size={16} color={c.muted} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: res.apresAno === 0 ? c.green : c.amberDark }}>{res.apresAno} à vérifier</span>
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Permutations à effectuer ({res.moves.length})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+              {res.moves.map((mv) => (
+                <div key={mv.tyre.id} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 11, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>{mv.tyre.marque || 'Sans marque'}{mv.tyre.dimension ? ` · ${mv.tyre.dimension}` : ''}{mv.tyre.profondeur != null ? ` · ${mv.tyre.profondeur} mm` : ''}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, fontSize: 12.5, color: c.muted, fontWeight: 700 }}><span>{empl(mv.from)}</span><ArrowRight size={14} color={c.amber} /><span style={{ color: c.ink }}>{empl(mv.to)}</span></div>
+                </div>
+              ))}
+            </div>
+            {res.problems.length > 0 && (
+              <div style={{ background: c.amberSoft, border: `1px solid ${c.hazard}`, borderRadius: 10, padding: '10px 12px', marginBottom: 14, fontSize: 12, color: c.ink, lineHeight: 1.5 }}>
+                {res.problems.map((p, i) => <div key={i}>• {p}</div>)}
+              </div>
+            )}
+            <button onClick={apply} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Shuffle size={16} /> {busy ? 'Application…' : 'Appliquer la permutation'}</button>
+            <div style={{ fontSize: 11, color: c.muted, textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>À appuyer une fois les pneus physiquement permutés sur le véhicule.</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* Télécharge le bilan « état des pneus » d'un parc en PDF */
 async function downloadBilanPDF({ clientNom, vehicules, pneus }) {
   await loadJsPDF();
@@ -1433,6 +1556,15 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
   const [bulkEssieu, setBulkEssieu] = useState(null);
   const [inspect, setInspect] = useState(null);
   const [intervOpen, setIntervOpen] = useState(false);
+  const [optimOpen, setOptimOpen] = useState(false);
+  const appliquerOptim = async (targetByPos) => {
+    for (const [key, tyre] of targetByPos) {
+      if (!tyre) continue;
+      const [e, pos] = key.split('-'); const essieu = Number(e);
+      const cur = pneuAt(essieu, pos);
+      if (!cur || cur.id !== tyre.id) await onSaveTyre({ essieu, pos, marque: tyre.marque, dimension: tyre.dimension, profondeur: tyre.profondeur, etat: tyre.etat, nature: tyre.nature });
+    }
+  };
   const inspectList = () => { const l = []; essieux.forEach((t, i) => { const num = i + 1; posDe(t).forEach((pos) => l.push({ essieu: num, pos: pos.code, lib: pos.lib })); }); return l; };
   const historique = [...interventions].sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
   const pneuAt = (essieu, pos) => pneus.find((p) => p.essieu === essieu && p.pos === pos) || null;
@@ -1472,7 +1604,10 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
       </div>
 
       {!readOnly && essieux.length > 0 && (
-        <button onClick={() => { const l = inspectList(); if (l.length) setInspect({ list: l, idx: 0 }); }} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 14.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14 }}><ClipboardList size={17} /> Inspecter le véhicule</button>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button onClick={() => { const l = inspectList(); if (l.length) setInspect({ list: l, idx: 0 }); }} style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><ClipboardList size={16} /> Inspecter</button>
+          <button onClick={() => setOptimOpen(true)} style={{ flex: 1, padding: '12px', borderRadius: 12, border: `1.5px solid ${nbEssieuxAlerte > 0 ? c.amber : c.line}`, background: nbEssieuxAlerte > 0 ? c.amberSoft : c.surface, color: nbEssieuxAlerte > 0 ? c.amberDark : c.ink, fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Shuffle size={16} /> Optimiser</button>
+        </div>
       )}
 
       {essieux.length === 0 ? (
@@ -1570,6 +1705,7 @@ function PneusVehicule({ vehicule, pneus = [], interventions = [], readOnly = fa
           onNext={next} onPrev={prev} />;
       })()}
       {intervOpen && <IntervForm vehicule={vehicule} onClose={() => setIntervOpen(false)} onSave={(f) => onAddInterv(f)} />}
+      {optimOpen && <OptimModal vehicule={vehicule} pneus={pneus} onClose={() => setOptimOpen(false)} onApply={appliquerOptim} />}
     </div>
   );
 }
