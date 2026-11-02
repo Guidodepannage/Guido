@@ -1283,7 +1283,18 @@ function OptimParc({ clientNom = '', vehicules = [], pneus = [], onBack, onApply
   const [busy, setBusy] = useState(false);
   const res = optimiserParc(vehicules, pneus);
   const empl = (x) => `${x.immat} · E${x.essieu} ${POS_LIB[x.pos] || x.pos}`;
+  const pneuLib = (t) => `${t.marque || 'Sans marque'}${t.profondeur != null ? ` · ${t.profondeur} mm` : ''}`;
   const apply = async () => { setBusy(true); await onApply(res.finalSlots); setBusy(false); };
+  /* Regroupe les déplacements individuels en permutations (cycles) : un échange de 2 pneus = 1 ligne */
+  const key = (x) => `${x.immat}|${x.essieu}|${x.pos}`;
+  const byTo = {}; res.moves.forEach((m) => { byTo[key(m.to)] = m; });
+  const seen = new Set(); const groupes = [];
+  res.moves.forEach((m) => {
+    if (seen.has(m)) return;
+    const cyc = []; let cur = m;
+    while (cur && !seen.has(cur)) { seen.add(cur); cyc.push(cur); cur = byTo[key(cur.from)]; }
+    groupes.push(cyc);
+  });
   return (
     <div>
       <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Retour au parc</button>
@@ -1306,14 +1317,34 @@ function OptimParc({ clientNom = '', vehicules = [], pneus = [], onBack, onApply
             <ArrowRight size={16} color={c.muted} />
             <span style={{ fontSize: 13, fontWeight: 800, color: res.apres === 0 ? c.green : c.amberDark }}>{res.apres} à vérifier</span>
           </div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Déplacements à effectuer ({res.moves.length})</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Permutations à effectuer ({groupes.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-            {res.moves.map((mv, k) => (
-              <div key={k} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 11, padding: '10px 12px' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>{mv.tyre.marque || 'Sans marque'}{mv.tyre.dimension ? ` · ${mv.tyre.dimension}` : ''}{mv.tyre.profondeur != null ? ` · ${mv.tyre.profondeur} mm` : ''}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5, fontSize: 12, color: c.muted, fontWeight: 700, flexWrap: 'wrap' }}><span>{empl(mv.from)}</span><ArrowRight size={14} color={c.amber} /><span style={{ color: c.ink }}>{empl(mv.to)}</span></div>
-              </div>
-            ))}
+            {groupes.map((cyc, k) => {
+              const dim = cyc[0].tyre.dimension;
+              if (cyc.length === 2) {
+                const a = cyc[0], b = cyc[1];
+                return (
+                  <div key={k} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 11, padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: c.amberDark, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}><Shuffle size={13} /> Échange{dim ? ` · ${dim}` : ''}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 700, flexWrap: 'wrap' }}>
+                      <span style={{ color: c.ink }}>{empl(a.from)} <span style={{ color: c.muted, fontWeight: 600 }}>({pneuLib(a.tyre)})</span></span>
+                      <span style={{ display: 'inline-flex', color: c.amber }}>⇄</span>
+                      <span style={{ color: c.ink }}>{empl(b.from)} <span style={{ color: c.muted, fontWeight: 600 }}>({pneuLib(b.tyre)})</span></span>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={k} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 11, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: c.amberDark, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}><Shuffle size={13} /> Rotation · {cyc.length} pneus{dim ? ` · ${dim}` : ''}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {cyc.map((mv, j) => (
+                      <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: c.muted, fontWeight: 700, flexWrap: 'wrap' }}><span>{empl(mv.from)} <span style={{ fontWeight: 600 }}>({pneuLib(mv.tyre)})</span></span><ArrowRight size={13} color={c.amber} /><span style={{ color: c.ink }}>{empl(mv.to)}</span></div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <button onClick={apply} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Shuffle size={16} /> {busy ? 'Application…' : 'Appliquer les permutations'}</button>
           <div style={{ fontSize: 11, color: c.muted, textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>À appuyer une fois les pneus physiquement déplacés entre les véhicules.</div>
