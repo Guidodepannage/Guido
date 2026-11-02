@@ -1176,6 +1176,58 @@ function optimiserVehicule(vehicule, pneusV) {
   return { moves, targetByPos, avantAno, apresAno, problems };
 }
 
+/* Optimisation à l'échelle d'un parc : échanges de pneus entre véhicules (même dimension),
+   par petits pas qui réduisent le plus les anomalies. Déplacements minimaux. */
+function optimiserParc(vehicules, pneus) {
+  const vById = {}; vehicules.forEach((v) => { vById[v.id] = v; });
+  const slots = [];
+  vehicules.forEach((v) => {
+    essieuxDe(v).forEach((type, i) => {
+      const num = i + 1;
+      posDe(type).forEach((p) => {
+        const t = pneus.find((x) => x.vehiculeId === v.id && x.essieu === num && x.pos === p.code);
+        if (t && (t.dimension || '').trim()) slots.push({ vehiculeId: v.id, clientId: t.clientId, immat: v.immat, essieu: num, pos: p.code, dim: (t.dimension || '').trim(), origId: t.id, cur: { id: t.id, marque: t.marque, dimension: t.dimension, profondeur: t.profondeur, etat: t.etat, nature: t.nature } });
+      });
+    });
+  });
+  const originPos = {};
+  slots.forEach((s) => { originPos[s.origId] = { immat: s.immat, essieu: s.essieu, pos: s.pos }; });
+  const anoVeh = (vid) => {
+    const v = vById[vid]; if (!v) return 0;
+    const pv = slots.filter((s) => s.vehiculeId === vid).map((s) => ({ essieu: s.essieu, pos: s.pos, marque: s.cur.marque, profondeur: s.cur.profondeur }));
+    return anomaliesVehicule(v, pv).length;
+  };
+  const vids = [...new Set(slots.map((s) => s.vehiculeId))];
+  const totalAno = () => vids.reduce((n, vid) => n + anoVeh(vid), 0);
+  const avant = totalAno();
+  let guard = 0;
+  while (guard++ < 300) {
+    let bestDelta = 0, bestPair = null;
+    for (let i = 0; i < slots.length; i++) {
+      for (let j = i + 1; j < slots.length; j++) {
+        const A = slots[i], B = slots[j];
+        if (A.dim !== B.dim || A.cur.id === B.cur.id) continue;
+        if ((A.cur.marque || '') === (B.cur.marque || '') && A.cur.profondeur === B.cur.profondeur) continue;
+        const vs = A.vehiculeId === B.vehiculeId ? [A.vehiculeId] : [A.vehiculeId, B.vehiculeId];
+        const before = vs.reduce((n, vid) => n + anoVeh(vid), 0);
+        const tmp = A.cur; A.cur = B.cur; B.cur = tmp;
+        const after = vs.reduce((n, vid) => n + anoVeh(vid), 0);
+        const t2 = A.cur; A.cur = B.cur; B.cur = t2;
+        const delta = after - before;
+        if (delta < bestDelta) { bestDelta = delta; bestPair = [i, j]; }
+      }
+    }
+    if (!bestPair) break;
+    const A = slots[bestPair[0]], B = slots[bestPair[1]];
+    const tmp = A.cur; A.cur = B.cur; B.cur = tmp;
+  }
+  const apres = totalAno();
+  const moves = [];
+  slots.forEach((s) => { const o = originPos[s.cur.id]; if (o && (o.immat !== s.immat || o.essieu !== s.essieu || o.pos !== s.pos)) moves.push({ tyre: s.cur, from: o, to: { immat: s.immat, essieu: s.essieu, pos: s.pos } }); });
+  const finalSlots = slots.filter((s) => s.cur.id !== s.origId);
+  return { moves, finalSlots, avant, apres };
+}
+
 /* Modale d'optimisation des positions de pneus */
 function OptimModal({ vehicule, pneus, onClose, onApply }) {
   const [busy, setBusy] = useState(false);
@@ -1222,6 +1274,51 @@ function OptimModal({ vehicule, pneus, onClose, onApply }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* Vue d'optimisation du parc : échanges de pneus entre véhicules */
+function OptimParc({ clientNom = '', vehicules = [], pneus = [], onBack, onApply }) {
+  const [busy, setBusy] = useState(false);
+  const res = optimiserParc(vehicules, pneus);
+  const empl = (x) => `${x.immat} · E${x.essieu} ${POS_LIB[x.pos] || x.pos}`;
+  const apply = async () => { setBusy(true); await onApply(res.finalSlots); setBusy(false); };
+  return (
+    <div>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 700, padding: '2px 0', marginBottom: 12 }}><ArrowLeft size={17} /> Retour au parc</button>
+      <div style={{ background: c.asphalt, color: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 12 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase' }}>Optimisation du parc</div>
+        <div style={{ fontSize: 18, fontWeight: 800, marginTop: 3 }}>{clientNom || '—'}</div>
+        <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>Échanges de pneus entre véhicules · même dimension · une marque par essieu</div>
+      </div>
+
+      {res.moves.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '20px 10px' }}>
+          {res.avant === 0
+            ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: c.green }}><CheckCircle2 size={36} /><div style={{ fontSize: 15, fontWeight: 700, color: c.ink }}>Tout le parc est conforme</div><div style={{ fontSize: 13, color: c.muted }}>Chaque essieu respecte déjà la règle (même marque, écart ≤ 5 mm).</div></div>
+            : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}><AlertTriangle size={32} color={c.amberDark} /><div style={{ fontSize: 14.5, fontWeight: 700, color: c.ink }}>Aucun échange n'améliore le parc</div><div style={{ fontSize: 13, color: c.muted, lineHeight: 1.5 }}>Il reste {res.avant} essieu(x) à vérifier, mais déplacer des pneus entre véhicules ne permet pas de faire mieux avec les pneus actuels.</div></div>}
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: c.paper, borderRadius: 12, padding: '11px', marginBottom: 14 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: c.red }}>{res.avant} à vérifier</span>
+            <ArrowRight size={16} color={c.muted} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: res.apres === 0 ? c.green : c.amberDark }}>{res.apres} à vérifier</span>
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: c.muted, marginBottom: 9 }}>Déplacements à effectuer ({res.moves.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+            {res.moves.map((mv, k) => (
+              <div key={k} style={{ background: c.surface, border: `1px solid ${c.line}`, borderRadius: 11, padding: '10px 12px' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>{mv.tyre.marque || 'Sans marque'}{mv.tyre.dimension ? ` · ${mv.tyre.dimension}` : ''}{mv.tyre.profondeur != null ? ` · ${mv.tyre.profondeur} mm` : ''}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5, fontSize: 12, color: c.muted, fontWeight: 700, flexWrap: 'wrap' }}><span>{empl(mv.from)}</span><ArrowRight size={14} color={c.amber} /><span style={{ color: c.ink }}>{empl(mv.to)}</span></div>
+              </div>
+            ))}
+          </div>
+          <button onClick={apply} disabled={busy} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: busy ? c.line : c.amber, color: busy ? c.muted : '#fff', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Shuffle size={16} /> {busy ? 'Application…' : 'Appliquer les permutations'}</button>
+          <div style={{ fontSize: 11, color: c.muted, textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>À appuyer une fois les pneus physiquement déplacés entre les véhicules.</div>
+        </>
+      )}
     </div>
   );
 }
@@ -1764,7 +1861,7 @@ function ParcClient({ vehicules = [], pneus = [], interventions = [], clientNom 
   );
 }
 
-function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions = [], delegations = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv, onDelegToggle }) {
+function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions = [], delegations = [], onAdd, onDelete, onSaveConfig, onSaveTyre, onDeleteTyre, onAddInterv, onDeleteInterv, onDelegToggle, onApplyPermut }) {
   const clients = accounts.filter((a) => a.type === 'client' && parcClients.includes(a.id)).sort((a, b) => (a.company || '').localeCompare(b.company || ''));
   const [clientId, setClientId] = useState('');
   const [immat, setImmat] = useState('');
@@ -1851,6 +1948,10 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
             <BilanPneus clientNom={client.company} vehicules={liste} pneus={pneus.filter((p) => p.clientId === client.id)} onBack={() => setMode('vehicules')} onOpen={(id) => { setSelVeh(id); setMode('vehicules'); }} />
           )}
 
+          {client && mode === 'optim' && (
+            <OptimParc clientNom={client.company} vehicules={liste} pneus={pneus.filter((p) => p.clientId === client.id)} onBack={() => setMode('vehicules')} onApply={onApplyPermut} />
+          )}
+
           {client && mode === 'vehicules' && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13, position: 'relative' }}>
@@ -1863,10 +1964,11 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                       {[
                         ...(prestataires.length > 0 ? [{ k: 'deleg', Icon: Users, label: 'Déléguer la gestion du parc' }] : []),
                         { k: 'add', Icon: Plus, label: 'Ajouter un véhicule' },
+                        { k: 'optim', Icon: Shuffle, label: 'Optimiser le parc (permutations)' },
                         { k: 'bilan', Icon: AlertTriangle, label: 'Bilan état des pneus' },
                         { k: 'rapport', Icon: ClipboardList, label: 'Rapport d\'interventions' },
                       ].map(({ k, Icon, label }, i, arr) => (
-                        <button key={k} onClick={() => { setMenu(false); if (k === 'rapport') setMode('rapports'); else if (k === 'bilan') setMode('bilan'); else setSheet(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', border: 'none', background: 'transparent', padding: '12px 14px', fontSize: 14, fontWeight: 600, color: c.ink, textAlign: 'left', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' }}><Icon size={17} color={c.muted} /> {label}</button>
+                        <button key={k} onClick={() => { setMenu(false); if (k === 'rapport') setMode('rapports'); else if (k === 'bilan') setMode('bilan'); else if (k === 'optim') setMode('optim'); else setSheet(k); }} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', border: 'none', background: 'transparent', padding: '12px 14px', fontSize: 14, fontWeight: 600, color: c.ink, textAlign: 'left', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' }}><Icon size={17} color={c.muted} /> {label}</button>
                       ))}
                     </div>
                   </>
@@ -3072,7 +3174,7 @@ function FacturesClient({ factures, onOpen }) {
   );
 }
 
-function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete, rdv, conges, onRdvAdd, onRdvStatut, onRdvDelete, onCongeAdd, onCongeDelete, delegations, onDelegToggle }) {
+function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, onStatus, onDelete, onAssign, onLogout, toast, onEnableAlerts, alertsState, stock, onStockCreate, onStockUpdate, onStockDelete, onStockAdjust, clientStock, onToggleAuth, onTakeCharge, onAdvance, onRegenLink, contact, onSaveContact, onDecline, factures, onFactureUpload, onFactureDelete, onFactureOpen, champsConfig, onSaveChamps, parcClients, onToggleParc, vehicules, onVehiculeAdd, onVehiculeDelete, pneusVeh, onPneuConfig, onPneuSave, onPneuDelete, interventions, onIntervAdd, onIntervDelete, rdv, conges, onRdvAdd, onRdvStatut, onRdvDelete, onCongeAdd, onCongeDelete, delegations, onDelegToggle, onApplyPermut }) {
   const [tab, setTab] = useState('dashboard');
   const [modal, setModal] = useState(false);
   const [pwd, setPwd] = useState(false);
@@ -3119,7 +3221,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
           : tab === 'missions' ? <AdminMissions missions={missions} accounts={accounts} onAssign={onAssign} onTakeCharge={onTakeCharge} stock={stock} onDecline={onDecline} />
           : tab === 'interventions' ? <MyInterventions missions={missions} profileId={profile.id} onAdvance={onAdvance} />
           : tab === 'stock' ? <StockView stock={stock} onCreate={onStockCreate} onUpdate={onStockUpdate} onDelete={onStockDelete} onAdjust={onStockAdjust} />
-          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} interventions={interventions} delegations={delegations} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} onDelegToggle={onDelegToggle} />
+          : tab === 'parc' ? <ParcAdmin accounts={accounts} parcClients={parcClients} vehicules={vehicules} pneus={pneusVeh} interventions={interventions} delegations={delegations} onAdd={onVehiculeAdd} onDelete={onVehiculeDelete} onSaveConfig={onPneuConfig} onSaveTyre={onPneuSave} onDeleteTyre={onPneuDelete} onAddInterv={onIntervAdd} onDeleteInterv={onIntervDelete} onDelegToggle={onDelegToggle} onApplyPermut={onApplyPermut} />
           : tab === 'planning' ? <PlanningAdmin accounts={accounts} parcClients={parcClients} rdv={rdv} conges={conges} onRdvAdd={onRdvAdd} onRdvStatut={onRdvStatut} onRdvDelete={onRdvDelete} onCongeAdd={onCongeAdd} onCongeDelete={onCongeDelete} />
           : tab === 'factures' ? <FacturesAdmin factures={factures} accounts={accounts} onUpload={onFactureUpload} onDelete={onFactureDelete} onOpen={onFactureOpen} />
           : tab === 'contact' ? <AdminContact contact={contact} onSave={onSaveContact} />
@@ -3537,6 +3639,15 @@ export default function App() {
     await supabase.from('pneus_vehicule').delete().eq('id', p.id);
     flash('Pneu retiré');
   };
+  const applyPermut = async (slots) => {
+    for (const s of slots) {
+      await supabase.from('pneus_vehicule').upsert(
+        { vehicule_id: s.vehiculeId, client_id: s.clientId, essieu: s.essieu, pos: s.pos, marque: s.cur.marque, dimension: s.cur.dimension, profondeur: s.cur.profondeur, etat: s.cur.etat, nature: s.cur.nature },
+        { onConflict: 'vehicule_id,essieu,pos' }
+      );
+    }
+    flash('Permutations appliquées');
+  };
   const intervAdd = async ({ vehiculeId, clientId, date, type, types, note, emplacements, kilometrage, intervenant, details }) => {
     const { error } = await supabase.from('interventions').insert({ vehicule_id: vehiculeId, client_id: clientId, date, type, types, note, emplacements, kilometrage, intervenant, details });
     if (error) flash('Erreur : ' + error.message); else flash('Intervention enregistrée');
@@ -3632,7 +3743,7 @@ export default function App() {
       pneusVeh={pneusVeh} onPneuConfig={vehiculeConfigSave} onPneuSave={pneuSave} onPneuDelete={pneuDelete}
       interventions={interventions} onIntervAdd={intervAdd} onIntervDelete={intervDelete}
       rdv={rdv} conges={conges} onRdvAdd={rdvAdd} onRdvStatut={rdvStatut} onRdvDelete={rdvDelete} onCongeAdd={congeAdd} onCongeDelete={congeDelete}
-      delegations={delegations} onDelegToggle={delegToggle} />
+      delegations={delegations} onDelegToggle={delegToggle} onApplyPermut={applyPermut} />
       {alertMission && (
         <AlarmOverlay
           mission={alertMission}
