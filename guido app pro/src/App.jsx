@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
   Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
-  ArrowLeft, ChevronRight, ChevronLeft, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical, Shuffle, ArrowRight
+  ArrowLeft, ChevronRight, ChevronLeft, ChevronDown, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical, Shuffle, ArrowRight
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -1903,6 +1903,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [q, setQ] = useState('');
   const [menu, setMenu] = useState(false);
   const [sheet, setSheet] = useState(null);
+  const [plie, setPlie] = useState({});
   const client = clients.find((cl) => cl.id === clientId);
   const nomClientParc = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
   const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
@@ -2008,23 +2009,42 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
 
               {liste.length === 0 ? (
                 <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0' }}>Aucun véhicule pour ce client.</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                  {liste.map((v) => {
-                    const np = pneus.filter((p) => p.vehiculeId === v.id).length;
-                    return (
-                      <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '8px 10px 8px 14px' }}>
-                        <button onClick={() => setSelVeh(v.id)} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 13, border: 'none', background: 'transparent', textAlign: 'left', padding: '4px 0' }}>
-                          <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
-                          <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div></div>
-                          <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
-                        </button>
-                        <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Trash2 size={15} /></button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              ) : (() => {
+                const parType = {};
+                liste.forEach((v) => { const t = v.vtype || 'Autre'; (parType[t] = parType[t] || []).push(v); });
+                const ordre = [...VEHIC_TYPES, ...Object.keys(parType).filter((t) => !VEHIC_TYPES.includes(t))];
+                return ordre.filter((t) => parType[t] && parType[t].length).map((t) => {
+                  const vs = parType[t];
+                  const ouvert = !plie[t];
+                  return (
+                    <div key={t} style={{ marginBottom: 6 }}>
+                      <button onClick={() => setPlie((p) => ({ ...p, [t]: !p[t] }))} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', border: 'none', background: 'transparent', padding: '7px 2px', textAlign: 'left' }}>
+                        {ouvert ? <ChevronDown size={18} color={c.muted} style={{ flexShrink: 0 }} /> : <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />}
+                        <div style={{ width: 28, height: 28, borderRadius: 8, background: c.paper, color: c.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={t} size={17} /></div>
+                        <span style={{ fontSize: 13.5, fontWeight: 800, color: c.ink }}>{t}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: c.muted }}>({vs.length})</span>
+                      </button>
+                      {ouvert && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 6, paddingLeft: 10 }}>
+                          {vs.map((v) => {
+                            const np = pneus.filter((p) => p.vehiculeId === v.id).length;
+                            return (
+                              <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '8px 10px 8px 14px' }}>
+                                <button onClick={() => setSelVeh(v.id)} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 13, border: 'none', background: 'transparent', textAlign: 'left', padding: '4px 0' }}>
+                                  <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
+                                  <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div></div>
+                                  <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
+                                </button>
+                                <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Trash2 size={15} /></button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
 
               {sheet === 'add' && (
                 <div onClick={() => setSheet(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(12,26,46,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 80 }}>
