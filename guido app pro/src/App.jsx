@@ -2010,11 +2010,21 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
               {liste.length === 0 ? (
                 <div style={{ textAlign: 'center', color: c.muted, fontSize: 14, padding: '30px 0' }}>Aucun véhicule pour ce client.</div>
               ) : (() => {
+                /* Statut de chaque véhicule (calculé une fois, sans ouvrir la fiche) */
+                const infoVeh = (v) => {
+                  const pv = pneus.filter((p) => p.vehiculeId === v.id);
+                  const aVerifier = anomaliesVehicule(v, pv).length;
+                  const aChanger = pv.filter((p) => p.etat === 'changer').length;
+                  return { np: pv.length, aVerifier, aChanger, alerte: aVerifier > 0 || aChanger > 0 };
+                };
                 const parType = {};
                 liste.forEach((v) => { const t = v.vtype || 'Autre'; (parType[t] = parType[t] || []).push(v); });
                 const ordre = [...VEHIC_TYPES, ...Object.keys(parType).filter((t) => !VEHIC_TYPES.includes(t))];
                 return ordre.filter((t) => parType[t] && parType[t].length).map((t) => {
-                  const vs = parType[t];
+                  /* Véhicules à vérifier remontés en haut de leur catégorie */
+                  const vs = parType[t].map((v) => ({ v, inf: infoVeh(v) }))
+                    .sort((a, b) => (b.inf.alerte ? 1 : 0) - (a.inf.alerte ? 1 : 0) || (a.v.immat || '').localeCompare(b.v.immat || ''));
+                  const nbAlerte = vs.filter((x) => x.inf.alerte).length;
                   const ouvert = !plie[t];
                   return (
                     <div key={t} style={{ marginBottom: 6 }}>
@@ -2023,22 +2033,29 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                         <div style={{ width: 28, height: 28, borderRadius: 8, background: c.paper, color: c.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={t} size={17} /></div>
                         <span style={{ fontSize: 13.5, fontWeight: 800, color: c.ink }}>{t}</span>
                         <span style={{ fontSize: 12, fontWeight: 700, color: c.muted }}>({vs.length})</span>
+                        {nbAlerte > 0 && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, background: c.amberSoft, color: c.amberDark, borderRadius: 999, padding: '3px 9px', fontSize: 11.5, fontWeight: 800 }}><AlertTriangle size={12} /> {nbAlerte} à vérifier</span>}
                       </button>
                       {ouvert && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 6, paddingLeft: 10 }}>
-                          {vs.map((v) => {
-                            const np = pneus.filter((p) => p.vehiculeId === v.id).length;
-                            return (
-                              <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 13, padding: '8px 10px 8px 14px' }}>
-                                <button onClick={() => setSelVeh(v.id)} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 13, border: 'none', background: 'transparent', textAlign: 'left', padding: '4px 0' }}>
-                                  <div style={{ width: 38, height: 38, borderRadius: 10, background: c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
-                                  <div style={{ flex: 1, minWidth: 0 }}><Plate value={v.immat} /><div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}{np > 0 ? ` · ${np} pneu${np > 1 ? 's' : ''}` : ''}</div></div>
-                                  <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0 }} />
-                                </button>
-                                <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Trash2 size={15} /></button>
-                              </div>
-                            );
-                          })}
+                          {vs.map(({ v, inf }) => (
+                            <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: c.surface, border: `1px solid ${inf.alerte ? c.amber : c.line}`, borderRadius: 13, padding: '8px 10px 8px 14px' }}>
+                              <button onClick={() => setSelVeh(v.id)} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 13, border: 'none', background: 'transparent', textAlign: 'left', padding: '4px 0' }}>
+                                <div style={{ width: 38, height: 38, borderRadius: 10, background: inf.alerte ? c.amber : c.asphalt, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><VehiculeIcon type={v.vtype} size={23} /></div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <Plate value={v.immat} />
+                                  <div style={{ fontSize: 12.5, color: c.muted, marginTop: 4 }}>{v.vtype}{inf.np > 0 ? ` · ${inf.np} pneu${inf.np > 1 ? 's' : ''}` : ''}</div>
+                                  {inf.alerte && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                                      {inf.aVerifier > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: c.amberSoft, color: c.amberDark, borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800 }}><AlertTriangle size={11} /> {inf.aVerifier} essieu{inf.aVerifier > 1 ? 'x' : ''} à vérifier</span>}
+                                      {inf.aChanger > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: c.redSoft, color: c.red, borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800 }}><CircleDot size={11} /> {inf.aChanger} pneu{inf.aChanger > 1 ? 's' : ''} à changer</span>}
+                                    </div>
+                                  )}
+                                </div>
+                                <ChevronRight size={18} color={c.muted} style={{ flexShrink: 0, alignSelf: 'center' }} />
+                              </button>
+                              <button onClick={() => onDelete(v)} aria-label="Supprimer" style={{ border: `1px solid ${c.line}`, background: c.surface, color: c.red, borderRadius: 9, padding: '8px 10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Trash2 size={15} /></button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
