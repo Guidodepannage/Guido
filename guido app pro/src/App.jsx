@@ -89,6 +89,15 @@ function Login() {
     if (error) setErr('E-mail ou mot de passe incorrect.');
   };
 
+  const forgot = async () => {
+    if (!email.trim()) { setErr('Saisissez votre adresse e-mail.'); return; }
+    setErr(''); setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    setMode('forgotSent');
+  };
+
   const validSignup = name.trim() && prenom.trim() && company.trim() && email.trim() && pass.length >= 6;
   const signup = async () => {
     setErr(''); setBusy(true);
@@ -124,6 +133,33 @@ function Login() {
     );
   }
 
+  if (mode === 'forgotSent') {
+    return shell(
+      <div style={{ textAlign: 'center', padding: '10px 4px' }}>
+        <div style={{ width: 54, height: 54, borderRadius: 16, background: c.greenSoft, color: c.green, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}><Mail size={28} /></div>
+        <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: c.ink }}>E-mail envoyé</h2>
+        <p style={{ margin: '0 0 20px', fontSize: 14, color: c.muted, lineHeight: 1.5 }}>Si un compte existe pour <b>{email.trim()}</b>, vous recevrez un lien pour choisir un nouveau mot de passe. Pensez à vérifier vos courriers indésirables.</p>
+        <button onClick={() => { setMode('login'); setErr(''); }} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.ink, color: '#fff', fontSize: 15, fontWeight: 800 }}>Retour à la connexion</button>
+      </div>
+    );
+  }
+
+  if (mode === 'forgot') {
+    return shell(
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}><KeyRound size={18} color={c.amber} /><span style={{ fontSize: 15, fontWeight: 700, color: c.ink }}>Mot de passe oublié</span></div>
+        <p style={{ margin: '0 0 14px', fontSize: 13.5, color: c.muted, lineHeight: 1.5 }}>Indiquez l'adresse e-mail de votre compte. Nous vous enverrons un lien pour réinitialiser votre mot de passe.</p>
+        <label style={labelStyle}>Adresse e-mail</label>
+        <input style={fieldStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@societe.fr" onKeyDown={(e) => e.key === 'Enter' && forgot()} />
+        {err && <div style={{ color: c.red, fontSize: 13, marginTop: 8 }}>{err}</div>}
+        <button onClick={forgot} disabled={busy} style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
+          {busy ? 'Envoi…' : 'Envoyer le lien'}
+        </button>
+        <button onClick={() => { setMode('login'); setErr(''); }} style={{ marginTop: 14, width: '100%', border: 'none', background: 'transparent', color: c.muted, fontSize: 13.5, fontWeight: 600 }}>← Retour à la connexion</button>
+      </div>
+    );
+  }
+
   if (mode === 'signup') {
     return shell(
       <div>
@@ -154,6 +190,9 @@ function Login() {
         <input style={fieldStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@societe.fr" onKeyDown={(e) => e.key === 'Enter' && submit()} /></div>
       <label style={labelStyle}>Mot de passe</label>
       <input type="password" style={fieldStyle} value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••" onKeyDown={(e) => e.key === 'Enter' && submit()} />
+      <div style={{ textAlign: 'right', marginTop: 8 }}>
+        <button onClick={() => { setMode('forgot'); setErr(''); }} style={{ border: 'none', background: 'transparent', color: c.amberDark, fontSize: 13, fontWeight: 700, padding: 0 }}>Mot de passe oublié ?</button>
+      </div>
       {err && <div style={{ color: c.red, fontSize: 13, marginTop: 8 }}>{err}</div>}
       <button onClick={submit} disabled={busy} style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
         {busy ? 'Connexion…' : 'Se connecter'}
@@ -209,6 +248,61 @@ function Bienvenue({ hasSession, onDone }) {
               {err && <div style={{ color: c.red, fontSize: 13, marginTop: 8 }}>{err}</div>}
               <button onClick={submit} disabled={busy} style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
                 {busy ? 'Activation…' : 'Activer mon compte'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  RÉINITIALISATION (depuis le lien « mot de passe oublié »)         */
+/* ================================================================== */
+function Reinitialiser({ onDone }) {
+  const [pass, setPass] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState(false);
+
+  const submit = async () => {
+    setErr('');
+    if (pass.length < 8) { setErr('8 caractères minimum.'); return; }
+    if (pass !== pass2) { setErr('Les deux mots de passe diffèrent.'); return; }
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: pass });
+    setBusy(false);
+    if (error) { setErr(/different from the old/i.test(error.message) ? "Le nouveau mot de passe doit être différent de l'ancien." : error.message); return; }
+    setOk(true);
+  };
+
+  return (
+    <div style={{ minHeight: '100dvh', background: c.asphalt, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 24, justifyContent: 'center' }}>
+          <img src="/logo-emblem.png" alt="Guido" style={{ width: 42, height: 42, objectFit: 'contain' }} />
+          <div><div style={{ fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1 }}>Nouveau mot de passe</div><div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>Choisissez votre nouveau mot de passe</div></div>
+        </div>
+        <div style={{ background: c.surface, borderRadius: 18, padding: 22 }}>
+          {ok ? (
+            <div style={{ textAlign: 'center', padding: '6px 2px' }}>
+              <div style={{ width: 54, height: 54, borderRadius: 16, background: c.greenSoft, color: c.green, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}><CheckCircle2 size={30} /></div>
+              <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: c.ink }}>Mot de passe modifié</h2>
+              <p style={{ margin: '0 0 20px', fontSize: 14, color: c.muted, lineHeight: 1.5 }}>Votre mot de passe a bien été mis à jour. Vous êtes connecté.</p>
+              <button onClick={onDone} style={{ width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800 }}>Accéder à Guido</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 14, color: c.muted, marginBottom: 16 }}>Saisissez votre nouveau mot de passe pour votre compte Guido.</div>
+              <div style={{ marginBottom: 13 }}><label style={labelStyle}>Nouveau mot de passe</label>
+                <input type="password" style={fieldStyle} value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Au moins 8 caractères" /></div>
+              <label style={labelStyle}>Confirmer</label>
+              <input type="password" style={fieldStyle} value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder="Retapez le mot de passe" onKeyDown={(e) => e.key === 'Enter' && submit()} />
+              {err && <div style={{ color: c.red, fontSize: 13, marginTop: 8 }}>{err}</div>}
+              <button onClick={submit} disabled={busy} style={{ marginTop: 16, width: '100%', padding: '13px', borderRadius: 12, border: 'none', background: c.amber, color: '#fff', fontSize: 15, fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
+                {busy ? 'Enregistrement…' : 'Enregistrer le mot de passe'}
               </button>
             </>
           )}
@@ -3308,6 +3402,7 @@ function AdminShell({ profile, accounts, missions, invites, onCreate, onCopy, on
 export default function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState(null);
+  const [recovery, setRecovery] = useState(false);
   const [profile, setProfile] = useState(null);
   const [missions, setMissions] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -3336,7 +3431,10 @@ export default function App() {
   /* Authentification */
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s ?? null);
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -3774,6 +3872,9 @@ export default function App() {
   };
 
   /* Rendu */
+  if (recovery) {
+    return <><GlobalStyle /><Reinitialiser onDone={() => { setRecovery(false); window.history.replaceState({}, '', '/'); setPath('/'); }} /></>;
+  }
   if (path.startsWith('/bienvenue')) {
     return <><GlobalStyle /><Bienvenue hasSession={!!session} onDone={() => { window.history.replaceState({}, '', '/'); setPath('/'); }} /></>;
   }
