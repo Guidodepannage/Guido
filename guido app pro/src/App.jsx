@@ -1998,6 +1998,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [menu, setMenu] = useState(false);
   const [sheet, setSheet] = useState(null);
   const [plie, setPlie] = useState({});
+  const [filtre, setFiltre] = useState('tous');
   const client = clients.find((cl) => cl.id === clientId);
   const nomClientParc = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
   const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
@@ -2111,10 +2112,39 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                   const aChanger = pv.filter((p) => p.etat === 'changer').length;
                   return { np: pv.length, aVerifier, aChanger, alerte: aVerifier > 0 || aChanger > 0 };
                 };
+                /* Barre de filtres : Tous · À vérifier · un bouton par type présent */
+                const typesPresents = [...VEHIC_TYPES, ...[...new Set(liste.map((v) => v.vtype || 'Autre'))].filter((t) => !VEHIC_TYPES.includes(t))].filter((t) => liste.some((v) => (v.vtype || 'Autre') === t));
+                const nbAVerifierTotal = liste.filter((v) => infoVeh(v).alerte).length;
+                const filtres = [{ k: 'tous', label: 'Tous', n: liste.length }, { k: 'verif', label: 'À vérifier', n: nbAVerifierTotal }, ...typesPresents.map((t) => ({ k: 't:' + t, label: t, n: liste.filter((v) => (v.vtype || 'Autre') === t).length }))];
+                /* Application du filtre */
+                let listeF = liste;
+                if (filtre === 'verif') listeF = liste.filter((v) => infoVeh(v).alerte);
+                else if (filtre.startsWith('t:')) { const t = filtre.slice(2); listeF = liste.filter((v) => (v.vtype || 'Autre') === t); }
+
+                const barre = (
+                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {filtres.map((f) => {
+                      const on = filtre === f.k;
+                      const alerte = f.k === 'verif';
+                      return (
+                        <button key={f.k} onClick={() => setFiltre(f.k)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: `1.5px solid ${on ? (alerte ? c.amber : c.ink) : c.line}`, background: on ? (alerte ? c.amberSoft : c.ink) : c.surface, color: on ? (alerte ? c.amberDark : '#fff') : c.ink, borderRadius: 999, padding: '7px 13px', fontSize: 13, fontWeight: 700 }}>
+                          {alerte && <AlertTriangle size={13} color={on ? c.amberDark : c.muted} />}
+                          {f.label}
+                          <span style={{ fontSize: 11.5, fontWeight: 800, opacity: 0.7 }}>{f.n}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+
+                if (listeF.length === 0) {
+                  return <>{barre}<div style={{ textAlign: 'center', color: c.muted, fontSize: 13.5, padding: '26px 12px', background: c.surface, borderRadius: 14, border: `1px dashed ${c.line}` }}>{filtre === 'verif' ? 'Aucun véhicule à vérifier. Tout est conforme.' : 'Aucun véhicule dans ce filtre.'}</div></>;
+                }
+
                 const parType = {};
-                liste.forEach((v) => { const t = v.vtype || 'Autre'; (parType[t] = parType[t] || []).push(v); });
+                listeF.forEach((v) => { const t = v.vtype || 'Autre'; (parType[t] = parType[t] || []).push(v); });
                 const ordre = [...VEHIC_TYPES, ...Object.keys(parType).filter((t) => !VEHIC_TYPES.includes(t))];
-                return ordre.filter((t) => parType[t] && parType[t].length).map((t) => {
+                const dossiers = ordre.filter((t) => parType[t] && parType[t].length).map((t) => {
                   /* Véhicules à vérifier remontés en haut de leur catégorie */
                   const vs = parType[t].map((v) => ({ v, inf: infoVeh(v) }))
                     .sort((a, b) => (b.inf.alerte ? 1 : 0) - (a.inf.alerte ? 1 : 0) || (a.v.immat || '').localeCompare(b.v.immat || ''));
@@ -2155,6 +2185,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                     </div>
                   );
                 });
+                return <>{barre}{dossiers}</>;
               })()}
 
               {sheet === 'add' && (
