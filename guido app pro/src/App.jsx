@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Plus, Search, Copy, Check, Power, Trash2,
   LogOut, ShieldCheck, X, Mail, Clock, UserPlus, ClipboardList, KeyRound, BellRing,
   Package, Minus, Pencil, AlertTriangle, Eye, EyeOff, Settings, Download, FileText,
-  ArrowLeft, ChevronRight, ChevronLeft, ChevronDown, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical, Shuffle, ArrowRight
+  ArrowLeft, ChevronRight, ChevronLeft, ChevronDown, CircleDot, Gauge, Calendar, CalendarX, RefreshCw, MoreVertical, Shuffle, ArrowRight, Filter
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { activerNotifications } from './push';
@@ -1999,6 +1999,7 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
   const [sheet, setSheet] = useState(null);
   const [plie, setPlie] = useState({});
   const [filtre, setFiltre] = useState('tous');
+  const [filtreOpen, setFiltreOpen] = useState(false);
   const client = clients.find((cl) => cl.id === clientId);
   const nomClientParc = (id) => { const a = accounts.find((x) => x.id === id); return a ? a.company : '—'; };
   const matches = q.trim() ? vehicules.filter((v) => normImmat(v.immat).includes(normImmat(q))).sort((a, b) => (a.immat || '').localeCompare(b.immat || '')) : [];
