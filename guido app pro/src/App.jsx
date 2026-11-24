@@ -2122,19 +2122,39 @@ function ParcAdmin({ accounts, parcClients, vehicules, pneus = [], interventions
                 if (filtre === 'verif') listeF = liste.filter((v) => infoVeh(v).alerte);
                 else if (filtre.startsWith('t:')) { const t = filtre.slice(2); listeF = liste.filter((v) => (v.vtype || 'Autre') === t); }
 
+                const actif = filtres.find((f) => f.k === filtre) || filtres[0];
+                const estFiltre = filtre !== 'tous';
                 const barre = (
-                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
-                    {filtres.map((f) => {
-                      const on = filtre === f.k;
-                      const alerte = f.k === 'verif';
-                      return (
-                        <button key={f.k} onClick={() => setFiltre(f.k)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: `1.5px solid ${on ? (alerte ? c.amber : c.ink) : c.line}`, background: on ? (alerte ? c.amberSoft : c.ink) : c.surface, color: on ? (alerte ? c.amberDark : '#fff') : c.ink, borderRadius: 999, padding: '7px 13px', fontSize: 13, fontWeight: 700 }}>
-                          {alerte && <AlertTriangle size={13} color={on ? c.amberDark : c.muted} />}
-                          {f.label}
-                          <span style={{ fontSize: 11.5, fontWeight: 800, opacity: 0.7 }}>{f.n}</span>
-                        </button>
-                      );
-                    })}
+                  <div style={{ position: 'relative', marginBottom: 14 }}>
+                    <button onClick={() => setFiltreOpen((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: `1.5px solid ${estFiltre ? c.amber : c.line}`, background: estFiltre ? c.amberSoft : c.surface, color: estFiltre ? c.amberDark : c.ink, borderRadius: 11, padding: '9px 13px', fontSize: 13.5, fontWeight: 700 }}>
+                      <Filter size={15} />
+                      {estFiltre ? actif.label : 'Filtrer'}
+                      <span style={{ fontSize: 11.5, fontWeight: 800, opacity: 0.7 }}>{actif.n}</span>
+                      <ChevronDown size={15} style={{ opacity: 0.7 }} />
+                    </button>
+                    {estFiltre && <button onClick={() => setFiltre('tous')} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: c.muted, fontSize: 12.5, fontWeight: 700 }}>Réinitialiser</button>}
+                    {filtreOpen && (
+                      <>
+                        <div onClick={() => setFiltreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                        <div className="pop" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, background: c.surface, border: `1px solid ${c.line}`, borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 50, minWidth: 220, overflow: 'hidden' }}>
+                          {filtres.map((f, i) => {
+                            const on = filtre === f.k;
+                            const alerte = f.k === 'verif';
+                            const icone = alerte ? <AlertTriangle size={15} color={c.amberDark} />
+                              : f.k === 'tous' ? <LayoutDashboard size={15} color={c.muted} />
+                              : <VehiculeIcon type={f.k.slice(2)} size={15} />;
+                            return (
+                              <button key={f.k} onClick={() => { setFiltre(f.k); setFiltreOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: 'none', background: on ? c.paper : 'transparent', padding: '11px 14px', fontSize: 14, fontWeight: on ? 800 : 600, color: alerte ? c.amberDark : c.ink, textAlign: 'left', borderBottom: i < filtres.length - 1 ? `1px solid ${c.line}` : 'none' }}>
+                                <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>{icone}</span>
+                                <span style={{ flex: 1 }}>{f.label}</span>
+                                <span style={{ fontSize: 12, fontWeight: 800, color: c.muted }}>{f.n}</span>
+                                {on && <Check size={15} color={c.amber} />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
 
